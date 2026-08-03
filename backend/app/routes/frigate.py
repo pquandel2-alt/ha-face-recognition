@@ -65,14 +65,19 @@ def list_snapshots(
 @router.post("/import/{event_id}")
 def import_snapshot_as_training_image(
     event_id: str,
-    person_id: int,
+    person_id: int = None,
     db: Session = Depends(get_db),
     frigate: FrigateService = Depends(get_frigate_service),
 ):
     """
     Import a Frigate snapshot as a training image for a person.
     Automatically detects face and crops it.
+
+    Body: {"person_id": 1} or query param ?person_id=1
     """
+    if not person_id:
+        raise HTTPException(status_code=400, detail="person_id required")
+
     person = db.query(Person).filter_by(id=person_id).first()
     if not person:
         raise HTTPException(status_code=404, detail="Person not found")

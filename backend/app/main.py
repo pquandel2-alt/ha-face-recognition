@@ -129,11 +129,15 @@ def on_frigate_event(payload: dict):
         event_type = payload.get("type")
         after = payload.get("after", {})
         label = after.get("label")
-        camera = after.get("camera")
+        camera = after.get("camera", "unknown")
         event_id = after.get("id")
 
-        # Only process new person detections
-        if event_type not in ["new", "update"] or label != "person":
+        # Only process new person detections (not updates which happen frequently)
+        if event_type != "new" or label != "person":
+            return
+
+        if not event_id or not camera:
+            logger.warning(f"Incomplete Frigate event: {payload}")
             return
 
         logger.debug(f"Processing Frigate event: {camera}/{event_id}")
@@ -153,6 +157,10 @@ def on_frigate_event(payload: dict):
             engine = get_face_engine()
             result = engine.analyze_image(snapshot_bytes, db)
 
+            if not result["results"]:
+                logger.warning(f"No faces detected in event {event_id}")
+                return
+
             # Take best match
             best_result = max(result["results"], key=lambda x: x["confidence"])
             person_name = best_result["name"]
@@ -169,10 +177,14 @@ def on_frigate_event(payload: dict):
             )
             db.add(event)
             db.commit()
+            logger.debug(f"Saved recognition event: {person_name} on {camera}")
 
             # Publish via MQTT
             if mqtt_service and mqtt_service.connected:
                 mqtt_service.publish_recognition(person_name, confidence, camera, timestamp.isoformat())
+                logger.debug(f"Published MQTT event: {person_name}")
+            else:
+                logger.warning("MQTT not connected, event not published")
 
             # Notify WebSocket clients
             asyncio.create_task(
@@ -187,14 +199,14 @@ def on_frigate_event(payload: dict):
                 )
             )
 
-            logger.info(f"Frigate event: {person_name} ({confidence:.2f}) on {camera}")
+            logger.info(f"Frigate recognition: {person_name} ({confidence:.2f}) on {camera}")
         except Exception as e:
-            logger.error(f"Error processing Frigate event: {e}")
+            logger.error(f"Error analyzing Frigate event {event_id}: {e}", exc_info=True)
         finally:
             db.close()
 
     except Exception as e:
-        logger.error(f"Error in on_frigate_event: {e}")
+        logger.error(f"Error in on_frigate_event: {e}", exc_info=True)
 
 
 async def broadcast_event(data: dict):
