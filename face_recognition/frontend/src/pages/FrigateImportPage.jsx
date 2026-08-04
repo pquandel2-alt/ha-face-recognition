@@ -1,6 +1,37 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { frigateAPI, personsAPI } from '../api'
+import api, { frigateAPI, personsAPI } from '../api'
+
+const NO_IMAGE_SRC =
+  'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23333" width="100" height="100"/%3E%3Ctext fill="%23666" text-anchor="middle" dy=".3em" x="50" y="50"%3ENo image%3C/text%3E%3C/svg%3E'
+
+// The API requires a custom Basic-Auth header, so a plain <img src="/api/..."> can't
+// authenticate — fetch the bytes via the authenticated axios instance instead and
+// render them as an object URL.
+function FrigateThumbnail({ eventId, className }) {
+  const [src, setSrc] = useState(null)
+
+  useEffect(() => {
+    let objectUrl
+    let cancelled = false
+    api
+      .get(`/frigate/thumbnail/${eventId}`, { responseType: 'blob' })
+      .then((res) => {
+        if (cancelled) return
+        objectUrl = URL.createObjectURL(res.data)
+        setSrc(objectUrl)
+      })
+      .catch(() => {
+        if (!cancelled) setSrc(NO_IMAGE_SRC)
+      })
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [eventId])
+
+  return <img src={src || NO_IMAGE_SRC} alt={`Event ${eventId}`} className={className} />
+}
 
 export default function FrigateImportPage() {
   const queryClient = useQueryClient()
@@ -122,14 +153,7 @@ export default function FrigateImportPage() {
                       : 'ring-1 ring-gray-600'
                   }`}
                 >
-                  <img
-                    src={`${process.env.VITE_FRIGATE_API || 'http://localhost:5000'}/api/events/${event.id}/thumbnail.jpg`}
-                    alt={`Event ${event.id}`}
-                    className="w-full h-40 object-cover"
-                    onError={(e) => {
-                      e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23333" width="100" height="100"/%3E%3Ctext fill="%23666" text-anchor="middle" dy=".3em" x="50" y="50"%3ENo image%3C/text%3E%3C/svg%3E'
-                    }}
-                  />
+                  <FrigateThumbnail eventId={event.id} className="w-full h-40 object-cover" />
 
                   <div className="absolute inset-0 bg-black bg-opacity-30 hover:bg-opacity-40 transition flex items-center justify-center">
                     <input

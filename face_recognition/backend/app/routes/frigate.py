@@ -3,6 +3,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -60,6 +61,30 @@ def list_snapshots(
         ],
         "count": len(events),
     }
+
+
+@router.get("/thumbnail/{event_id}")
+def get_thumbnail(
+    event_id: str,
+    frigate: FrigateService = Depends(get_frigate_service),
+):
+    """Proxy a Frigate event thumbnail (Frigate's REST port isn't reachable from the browser)."""
+    image_bytes = frigate.get_thumbnail(event_id)
+    if not image_bytes:
+        raise HTTPException(status_code=404, detail="Thumbnail not found")
+    return Response(content=image_bytes, media_type="image/jpeg")
+
+
+@router.get("/snapshot/{event_id}")
+def get_snapshot(
+    event_id: str,
+    frigate: FrigateService = Depends(get_frigate_service),
+):
+    """Proxy a Frigate event snapshot (Frigate's REST port isn't reachable from the browser)."""
+    image_bytes = frigate.get_snapshot(event_id)
+    if not image_bytes:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+    return Response(content=image_bytes, media_type="image/jpeg")
 
 
 @router.post("/import/{event_id}")

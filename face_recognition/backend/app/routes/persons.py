@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/persons", tags=["persons"])
 
 
-@router.get("/")
+@router.get("")
 def list_persons(db: Session = Depends(get_db)):
     """List all persons."""
     persons = db.query(Person).all()
@@ -32,7 +32,7 @@ def list_persons(db: Session = Depends(get_db)):
     ]
 
 
-@router.post("/")
+@router.post("")
 def create_person(name: str, db: Session = Depends(get_db)):
     """Create new person."""
     if not name or len(name) < 2:

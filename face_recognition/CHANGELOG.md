@@ -1,5 +1,46 @@
 # Changelog
 
+## 1.0.7
+
+- Fix (echter Root-Cause hinter „Login funktioniert nicht" + „Frigate Import kaputt"):
+  `routes/persons.py` registrierte die Liste/Anlage-Route als `APIRouter(prefix="/persons")` +
+  `@router.get("/")`/`@router.post("/")` — der tatsächliche Pfad war damit `/api/persons/`
+  (mit Slash am Ende). Das Frontend ruft aber überall `/api/persons` (ohne Slash) auf. Starlette
+  matcht Routen in Registrierungsreihenfolge und wertet dabei nur exakte Treffer; die
+  Catch-all-SPA-Route (`@app.get("/{full_path:path}")`, ganz am Ende registriert, für React-Router
+  Deep-Links) griff hier zuerst mit vollem Match und lieferte für alles unter `api/` explizit
+  `404 Not Found` — nie eine Weiterleitung, nie die echte Personen-Liste. Dieser Bug war die
+  ganze Zeit da, wurde aber vom parallelen 401-Auth-Bug maskiert: solange Requests schon an der
+  Basic-Auth-Middleware scheiterten, kamen sie nie bis zum Routing durch. Erst mit v1.0.6 (Login
+  funktionierte jetzt) wurde der 404 sichtbar.
+  Direkte Folgen dieses einen Bugs:
+  - Die neue `LoginGate`-Komponente aus 1.0.6 prüft Zugangsdaten über genau diesen Aufruf
+    (`GET /api/persons`) — jeder Login schlug fehl (404 statt 200), unabhängig davon ob
+    Benutzername/Passwort korrekt waren. Daher „das Anmeldeformular hat noch nie funktioniert".
+  - Die „Frigate Import"-Seite lädt die Personen-Liste für die Zielperson-Auswahl über denselben
+    Aufruf — die Sidebar war deshalb immer leer, Import unmöglich.
+  Fix: Routen auf `@router.get("")`/`@router.post("")` geändert → tatsächlicher Pfad jetzt exakt
+  `/api/persons`, matcht direkt ohne Umweg über die Catch-all-Route.
+- Fix: `LoginGate.jsx` behandelte jeden Fehlschlag beim Verifizieren (egal ob 401, 404, 500 oder
+  Netzwerkfehler) pauschal als „Benutzername oder Passwort falsch" und löschte die eingegebenen
+  Zugangsdaten. Jetzt wird nur noch ein echtes `401` als falsches Passwort gewertet; andere
+  Server-Fehler bzw. „Server nicht erreichbar" werden als solche angezeigt statt fälschlich dem
+  Passwort angelastet.
+- Fix: Snapshot-Thumbnails auf der „Frigate Import"-Seite luden nie, unabhängig vom obigen Bug.
+  Ursache 1: `process.env.VITE_FRIGATE_API` ist im Vite-Browser-Bundle immer `undefined` (Vite
+  exponiert Env-Variablen als `import.meta.env.VITE_*`, nicht über Node's `process.env` — das war
+  im Frontend-Code schlicht nie erreichbar), es griff also immer der Fallback
+  `http://localhost:5000`. Ursache 2: selbst korrekt aufgelöst wäre das der falsche Host (der
+  Browser des Nutzers, nicht der HA-Host) UND Frigates REST-Port `5000` ist im Frigate-Add-on gar
+  nicht auf das LAN exposed (nur intern im HA-Docker-Netz erreichbar) — direkte
+  Browser-zu-Frigate-Requests können hier grundsätzlich nie funktionieren.
+  Fix: neue Backend-Proxy-Endpunkte `GET /api/frigate/thumbnail/{event_id}` und
+  `GET /api/frigate/snapshot/{event_id}` (nutzen den bereits vorhandenen, aber bis dato von keiner
+  Route genutzten `frigate_service.get_thumbnail()`/`get_snapshot()`). Da `/api/*` Basic-Auth
+  verlangt und ein normales `<img src=...>` keine Custom-Header mitschicken kann, lädt das
+  Frontend die Thumbnails jetzt über eine neue `FrigateThumbnail`-Komponente per authentifiziertem
+  `axios`-Request als Blob und zeigt sie über eine Object-URL an.
+
 ## 1.0.6
 
 - Fix: Frontend bekam nach dem Ändern der `auth_username`/`auth_password`-Add-on-Optionen

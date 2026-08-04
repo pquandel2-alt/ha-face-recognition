@@ -24,7 +24,15 @@ export default function LoginGate({ children }) {
     api
       .get('/persons')
       .then(() => setAuthed(true))
-      .catch(() => clearStoredCredentials())
+      .catch((err) => {
+        if (err.response?.status === 401) {
+          clearStoredCredentials()
+        } else {
+          // Server unreachable or a non-auth error (e.g. 404/500) — keep the
+          // stored credentials, they may well be correct.
+          setAuthed(true)
+        }
+      })
       .finally(() => setChecking(false))
   }, [])
 
@@ -38,8 +46,16 @@ export default function LoginGate({ children }) {
       await api.get('/persons')
       setAuthed(true)
     } catch (err) {
-      clearStoredCredentials()
-      setError('Benutzername oder Passwort falsch.')
+      if (err.response?.status === 401) {
+        clearStoredCredentials()
+        setError('Benutzername oder Passwort falsch.')
+      } else if (err.response) {
+        clearStoredCredentials()
+        setError(`Server-Fehler (${err.response.status}). Zugangsdaten wurden nicht gespeichert.`)
+      } else {
+        clearStoredCredentials()
+        setError('Server nicht erreichbar.')
+      }
     } finally {
       setChecking(false)
     }
