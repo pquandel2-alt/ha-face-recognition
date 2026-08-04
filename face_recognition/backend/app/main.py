@@ -95,8 +95,17 @@ def on_frigate_event(payload: dict):
         camera = after.get("camera", "unknown")
         event_id = after.get("id")
 
+        if label != "person":
+            return
+
+        # Frigate's own recognition verdict (sub_label) isn't ready at "new" —
+        # it only finalizes once the tracked object's lifecycle ends.
+        if event_type == "end":
+            on_frigate_event_end(event_id)
+            return
+
         # Only process new person detections (not updates which happen frequently)
-        if event_type != "new" or label != "person":
+        if event_type != "new":
             return
 
         if not event_id or not camera:
@@ -154,7 +163,7 @@ def on_frigate_event(payload: dict):
                 broadcast_event(
                     {
                         "type": "recognition",
-                        "person": person_name,
+                        "person_name": person_name,
                         "confidence": confidence,
                         "camera": camera,
                         "timestamp": timestamp.isoformat(),
@@ -170,6 +179,57 @@ def on_frigate_event(payload: dict):
 
     except Exception as e:
         logger.error(f"Error in on_frigate_event: {e}", exc_info=True)
+
+
+def on_frigate_event_end(event_id: str | None):
+    """
+    Fetch Frigate's own finalized recognition verdict (sub_label) for an
+    event and attach it to the matching, already-saved RecognitionEvent
+    so both results can be compared side by side.
+    """
+    if not event_id:
+        return
+
+    db = SessionLocal()
+    try:
+        event = (
+            db.query(RecognitionEvent)
+            .filter(RecognitionEvent.frigate_event_id == event_id)
+            .first()
+        )
+        if not event:
+            # We never analyzed this event (e.g. no snapshot available at "new")
+            return
+
+        frigate_event = FrigateService().get_event(event_id)
+        if not frigate_event:
+            return
+
+        sub_label = frigate_event.get("sub_label")
+        if sub_label is None:
+            return
+
+        sub_label_score = (frigate_event.get("data") or {}).get("sub_label_score")
+
+        event.frigate_sub_label = sub_label
+        event.frigate_sub_label_score = sub_label_score
+        db.commit()
+        logger.debug(f"Attached Frigate sub_label to event {event_id}: {sub_label}")
+
+        asyncio.create_task(
+            broadcast_event(
+                {
+                    "type": "frigate_comparison",
+                    "frigate_event_id": event_id,
+                    "frigate_sub_label": sub_label,
+                    "frigate_sub_label_score": sub_label_score,
+                }
+            )
+        )
+    except Exception as e:
+        logger.error(f"Error processing Frigate event end for {event_id}: {e}", exc_info=True)
+    finally:
+        db.close()
 
 
 async def broadcast_event(data: dict):

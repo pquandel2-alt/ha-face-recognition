@@ -35,6 +35,17 @@ class FrigateService:
             logger.error(f"Error fetching Frigate events: {e}")
             return []
 
+    def get_event(self, event_id: str) -> Optional[dict]:
+        """Get a single Frigate event by id (includes sub_label once finalized)."""
+        try:
+            url = f"{self.base_url}/api/events/{event_id}"
+            response = requests.get(url, timeout=self.timeout)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Error fetching Frigate event {event_id}: {e}")
+            return None
+
     def get_snapshot(self, event_id: str) -> Optional[bytes]:
         """Get snapshot for a Frigate event."""
         try:

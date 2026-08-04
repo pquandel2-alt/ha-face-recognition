@@ -38,8 +38,32 @@ def get_db():
         db.close()
 
 
+def _migrate_add_missing_columns():
+    """
+    Base.metadata.create_all() only creates missing tables, it never adds
+    columns to a table that already exists. Patch new columns onto an
+    existing recognition_events table here so upgrades don't silently
+    lose new fields on users' already-populated databases.
+    """
+    with engine.connect() as conn:
+        existing = {
+            row[1] for row in conn.exec_driver_sql("PRAGMA table_info(recognition_events)")
+        }
+        for column, ddl_type in (
+            ("frigate_sub_label", "VARCHAR(255)"),
+            ("frigate_sub_label_score", "FLOAT"),
+        ):
+            if column not in existing:
+                logger.info(f"Migrating: adding column {column} to recognition_events")
+                conn.exec_driver_sql(
+                    f"ALTER TABLE recognition_events ADD COLUMN {column} {ddl_type}"
+                )
+        conn.commit()
+
+
 def init_db():
     """Create all tables."""
     logger.info("Initializing database...")
     Base.metadata.create_all(bind=engine)
+    _migrate_add_missing_columns()
     logger.info("Database initialized successfully")

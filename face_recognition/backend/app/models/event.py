@@ -16,6 +16,8 @@ class RecognitionEvent(Base):
     confidence = Column(Float, nullable=False)
     snapshot_path = Column(String(512), nullable=True)
     frigate_event_id = Column(String(255), nullable=True)
+    frigate_sub_label = Column(String(255), nullable=True)
+    frigate_sub_label_score = Column(Float, nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     # Relationships

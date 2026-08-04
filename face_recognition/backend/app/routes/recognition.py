@@ -73,6 +73,8 @@ def get_recent_events(limit: int = 50, db: Session = Depends(get_db)):
             "camera": e.camera,
             "person_name": e.person_name,
             "confidence": e.confidence,
+            "frigate_sub_label": e.frigate_sub_label,
+            "frigate_sub_label_score": e.frigate_sub_label_score,
             "timestamp": e.timestamp.isoformat(),
         }
         for e in events

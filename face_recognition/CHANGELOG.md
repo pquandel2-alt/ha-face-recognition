@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.0.11
+
+- Neu (auf Nutzerwunsch: Vergleich der eigenen Erkennung mit Frigates eingebauter
+  Gesichtserkennung, um Frigates wiederholte Fehlerkennungen einordnen zu können):
+  Jedes Recognition-Event zeigt jetzt zusätzlich Frigates eigenen `sub_label`-Treffer samt
+  Konfidenz (`data.sub_label_score`) direkt neben dem Ergebnis dieser App an. Weichen beide
+  Ergebnisse voneinander ab, wird die Event-Zeile in der Events-Ansicht farblich hervorgehoben.
+  Technisch: Frigates eigene Erkennung ist beim `"new"`-Event (dem bisher einzig verarbeiteten
+  Event-Typ) noch nicht fertig — daher wird jetzt zusätzlich auf den `"end"`-Event reagiert,
+  das zugehörige Frigate-Event per REST nachgeladen und das bereits gespeicherte Recognition-Event
+  nachträglich mit `frigate_sub_label`/`frigate_sub_label_score` ergänzt (neue, migrierte
+  DB-Spalten — bestehende `face_db.db`-Dateien werden beim Start automatisch erweitert).
+- Fix: Die WebSocket-Live-Aktualisierung der Events-Seite sendete den Personennamen unter dem
+  Feld `person`, das Frontend las aber `person_name` — live per WebSocket eintreffende Events
+  zeigten dadurch keinen Namen an. Zusätzlich überschrieb die alte Live-Liste dauerhaft die
+  per REST abgefragte Liste, sobald ein einziges WebSocket-Event eingetroffen war — nachträglich
+  ergänzte Daten (wie Frigates `sub_label`, der erst mit Verzögerung eintrifft) wurden für bereits
+  angezeigte Zeilen nie sichtbar. Die Events-Seite nutzt WebSocket-Nachrichten jetzt nur noch als
+  Signal, die REST-Liste neu zu laden, die weiterhin alleinige Datenquelle bleibt.
+
 ## 1.0.10
 
 - Fix (Log-Analyse nach Nutzer-Fehlermeldung: „Nach dem 4. Training kommen Fehlermeldungen"):
