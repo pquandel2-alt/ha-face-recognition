@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.6
+
+- Fix: Frontend bekam nach dem Ändern der `auth_username`/`auth_password`-Add-on-Optionen
+  (weg von den Defaults `admin`/`changeme`) nur noch `401 Unauthorized` auf jeden API-Call
+  (`/api/persons`, `/api/frigate/health`, insbesondere sichtbar auf der „Frigate Import"-Seite).
+  Ursache: `frontend/src/api.js` liest die Basic-Auth-Credentials aus `localStorage`, fiel dort
+  aber mangels UI ohne gespeicherte Werte fest auf die hartcodierten Defaults `admin`/`changeme`
+  zurück — es gab schlicht **keine Möglichkeit**, im Frontend andere Zugangsdaten einzugeben.
+  Die App funktionierte also nur solange, wie die Add-on-Auth-Optionen exakt auf den
+  Werkseinstellungen standen.
+  Fix: neue `LoginGate`-Komponente (`frontend/src/components/LoginGate.jsx`) fragt beim ersten
+  Aufruf Benutzername/Passwort ab, verifiziert sie gegen `/api/persons` und speichert sie erst
+  bei Erfolg in `localStorage`; bei falschen Zugangsdaten wird eine Fehlermeldung angezeigt statt
+  stillschweigend mit ungültigen Defaults weiterzumachen. Zusätzlich ein „Abmelden"-Button im
+  Header, um gespeicherte Zugangsdaten zurückzusetzen. `api.js` verwendet keine hartcodierten
+  Fallback-Credentials mehr.
+
 ## 1.0.5
 
 - Fix: Fehlende/falsche Basic-Auth-Header führten zu `500 Internal Server Error` statt zum

@@ -4,8 +4,8 @@ const API_BASE = '/api'
 
 // Basic auth helper
 const getAuthHeader = () => {
-  const username = localStorage.getItem('auth_username') || 'admin'
-  const password = localStorage.getItem('auth_password') || 'changeme'
+  const username = localStorage.getItem('auth_username') || ''
+  const password = localStorage.getItem('auth_password') || ''
   const credentials = btoa(`${username}:${password}`)
   return { Authorization: `Basic ${credentials}` }
 }
