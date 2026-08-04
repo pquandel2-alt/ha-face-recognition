@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.0.13
+
+- Fix (Nutzer-Meldung: "Frigate hat mir richtig erkannt aber unsere App hat mich nicht erkannt" —
+  live geprüft: Frigate erkannte dasselbe Event mit `sub_label_score` 0.99, unsere App lieferte
+  0.03, teils sogar negative Ähnlichkeit statt eines echten, nur unscharfen Gesichts-Matches):
+  Der `crop=1`-Snapshot aus 1.0.12 ist zwar auf die Personen-Bounding-Box zugeschnitten, bleibt
+  aber ein Ganzkörper-Bild — das Gesicht darin ist für InsightFace' Detektor oft zu klein für eine
+  brauchbare Embedding-Qualität. Frigate selbst nutzt dafür einen eigenen, dedizierten
+  Gesichtsdetektor und sammelt dessen eng zugeschnittene Treffer automatisch im `train`-Bucket
+  von `/api/faces` (Dateiname beginnt mit der Frigate-Event-ID). Neu: `frigate_service.py` holt
+  über `get_train_face_crops(event_id)` genau diese Crops; `main.py::on_frigate_event_end`
+  (ausgelöst beim `"end"`-Event, wenn Frigates Gesichtserkennung für das Event abgeschlossen ist)
+  wertet sie zusätzlich zum ursprünglichen `"new"`-Snapshot aus und ersetzt das gespeicherte
+  Recognition-Event durch das bessere Ergebnis, inklusive erneuter MQTT-Veröffentlichung (relevant
+  für den HA-Sensor). Existierte für ein Event noch gar kein Recognition-Event (z. B. weil beim
+  `"new"`-Snapshot kein Gesicht gefunden wurde), wird jetzt eines aus den Trainings-Crops
+  nachträglich angelegt.
+- Fix: `on_frigate_event`/`on_frigate_event_end` liefen auf dem MQTT-Hintergrundthread
+  (`paho-mqtt`s `loop_forever`) ohne eigenen asyncio-Event-Loop und riefen dort
+  `asyncio.create_task(...)` auf — das schlug bei jedem Frigate-Event mit
+  `RuntimeError: no running event loop` fehl (im Log sichtbar, brach aber nur die
+  WebSocket-Live-Aktualisierung, nicht die DB-/MQTT-Pipeline). Fix: Die Event-Loop wird beim
+  Start in `main_loop` gemerkt und Broadcasts laufen jetzt über
+  `asyncio.run_coroutine_threadsafe(...)` (neue Hilfsfunktion `schedule_broadcast`), die von
+  jedem Thread aus sicher funktioniert.
+
 ## 1.0.12
 
 - Verbesserung (aus der Auswertung der Frigate-Vergleichsdaten aus 1.0.11: bei 5 von 9 Events

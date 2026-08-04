@@ -93,6 +93,34 @@ class FrigateService:
             logger.error(f"Error fetching Frigate trained faces: {e}")
             return {}
 
+    def get_train_face_crops(self, event_id: str) -> List[bytes]:
+        """
+        Fetch Frigate's own auto-collected face-detector crops for one event
+        from the /api/faces 'train' bucket (filenames are prefixed with the
+        Frigate event id). Frigate runs a dedicated face detector to produce
+        these — tightly cropped to the actual face — unlike our crop=1
+        snapshot which is the whole person bounding box, so these are a much
+        better match for the framing our stored embeddings were trained on.
+        """
+        try:
+            url = f"{self.base_url}/api/faces"
+            response = requests.get(url, timeout=self.timeout)
+            response.raise_for_status()
+            filenames = response.json().get("train", [])
+            crops = []
+            for filename in filenames:
+                if not filename.startswith(f"{event_id}-"):
+                    continue
+                image_response = requests.get(
+                    f"{self.base_url}/clips/faces/train/{filename}", timeout=self.timeout
+                )
+                if image_response.ok:
+                    crops.append(image_response.content)
+            return crops
+        except Exception as e:
+            logger.error(f"Error fetching train face crops for event {event_id}: {e}")
+            return []
+
     def get_face_image(self, name: str, filename: str) -> Optional[bytes]:
         """Get one of Frigate's trained face images by person name + filename."""
         try:

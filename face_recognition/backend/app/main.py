@@ -45,14 +45,31 @@ app.include_router(frigate.router, prefix="/api")
 # Global MQTT service
 mqtt_service: MQTTService | None = None
 active_websockets: list[WebSocket] = []
+main_loop: asyncio.AbstractEventLoop | None = None
+
+
+def schedule_broadcast(data: dict) -> None:
+    """
+    Schedule a WebSocket broadcast from any thread.
+
+    on_frigate_event/on_frigate_event_end run synchronously on the MQTT
+    client's background thread (paho-mqtt's loop_forever), which has no
+    asyncio event loop of its own — asyncio.create_task() would raise
+    "no running event loop" there. run_coroutine_threadsafe schedules the
+    coroutine onto the loop captured at startup instead, which works from
+    any thread.
+    """
+    if main_loop is not None:
+        asyncio.run_coroutine_threadsafe(broadcast_event(data), main_loop)
 
 
 @app.on_event("startup")
 async def startup():
     """Initialize database, start MQTT service, and setup HA Discovery."""
-    global mqtt_service
+    global mqtt_service, main_loop
 
     logger.info("Starting Face Recognition Service...")
+    main_loop = asyncio.get_running_loop()
 
     # Initialize database
     init_db()
@@ -159,16 +176,14 @@ def on_frigate_event(payload: dict):
                 logger.warning("MQTT not connected, event not published")
 
             # Notify WebSocket clients
-            asyncio.create_task(
-                broadcast_event(
-                    {
-                        "type": "recognition",
-                        "person_name": person_name,
-                        "confidence": confidence,
-                        "camera": camera,
-                        "timestamp": timestamp.isoformat(),
-                    }
-                )
+            schedule_broadcast(
+                {
+                    "type": "recognition",
+                    "person_name": person_name,
+                    "confidence": confidence,
+                    "camera": camera,
+                    "timestamp": timestamp.isoformat(),
+                }
             )
 
             logger.info(f"Frigate recognition: {person_name} ({confidence:.2f}) on {camera}")
@@ -184,47 +199,90 @@ def on_frigate_event(payload: dict):
 def on_frigate_event_end(event_id: str | None):
     """
     Fetch Frigate's own finalized recognition verdict (sub_label) for an
-    event and attach it to the matching, already-saved RecognitionEvent
-    so both results can be compared side by side.
+    event, and re-run our own matching against Frigate's dedicated
+    face-detector crops (the /api/faces "train" bucket) instead of the
+    coarse whole-person snapshot used at "new" time. Those crops are
+    tightly framed on the actual face the way our training images are,
+    while the "new"-time snapshot is a whole-body crop where the face is
+    small and often produces near-random similarity scores. Whichever
+    result is saved here is what gets published to MQTT/HA, since it's
+    the best information we'll ever have for this event.
     """
     if not event_id:
         return
 
     db = SessionLocal()
     try:
+        frigate = FrigateService()
+        frigate_event = frigate.get_event(event_id) or {}
+        sub_label = frigate_event.get("sub_label")
+        sub_label_score = (frigate_event.get("data") or {}).get("sub_label_score")
+
         event = (
             db.query(RecognitionEvent)
             .filter(RecognitionEvent.frigate_event_id == event_id)
             .first()
         )
-        if not event:
-            # We never analyzed this event (e.g. no snapshot available at "new")
-            return
 
-        frigate_event = FrigateService().get_event(event_id)
-        if not frigate_event:
-            return
+        crops = frigate.get_train_face_crops(event_id)
+        best_name, best_confidence = None, -1.0
+        if crops:
+            from routes.training import get_face_engine
 
-        sub_label = frigate_event.get("sub_label")
-        if sub_label is None:
-            return
+            engine = get_face_engine()
+            for crop_bytes in crops:
+                result = engine.analyze_image(crop_bytes, db)
+                for face_result in result["results"]:
+                    if face_result["confidence"] > best_confidence:
+                        best_confidence = face_result["confidence"]
+                        best_name = face_result["name"]
 
-        sub_label_score = (frigate_event.get("data") or {}).get("sub_label_score")
-
-        event.frigate_sub_label = sub_label
-        event.frigate_sub_label_score = sub_label_score
-        db.commit()
-        logger.debug(f"Attached Frigate sub_label to event {event_id}: {sub_label}")
-
-        asyncio.create_task(
-            broadcast_event(
-                {
-                    "type": "frigate_comparison",
-                    "frigate_event_id": event_id,
-                    "frigate_sub_label": sub_label,
-                    "frigate_sub_label_score": sub_label_score,
-                }
+        refined = False
+        if event is None:
+            if best_name is None:
+                # Nothing was ever saved for this event (e.g. no snapshot at
+                # "new") and Frigate has no face crops for it either.
+                return
+            event = RecognitionEvent(
+                camera=frigate_event.get("camera", "unknown"),
+                person_name=best_name,
+                confidence=best_confidence,
+                frigate_event_id=event_id,
+                timestamp=datetime.utcnow(),
             )
+            db.add(event)
+            refined = True
+        elif best_name is not None and best_confidence > event.confidence:
+            event.person_name = best_name
+            event.confidence = best_confidence
+            refined = True
+
+        if sub_label is not None:
+            event.frigate_sub_label = sub_label
+            event.frigate_sub_label_score = sub_label_score
+
+        db.commit()
+        logger.debug(f"Processed Frigate event end for {event_id}")
+
+        if refined:
+            logger.info(
+                f"Refined recognition for event {event_id} using Frigate face crops: "
+                f"{event.person_name} ({event.confidence:.2f})"
+            )
+            if mqtt_service and mqtt_service.connected:
+                mqtt_service.publish_recognition(
+                    event.person_name, event.confidence, event.camera, event.timestamp.isoformat()
+                )
+
+        schedule_broadcast(
+            {
+                "type": "frigate_comparison",
+                "frigate_event_id": event_id,
+                "person_name": event.person_name,
+                "confidence": event.confidence,
+                "frigate_sub_label": event.frigate_sub_label,
+                "frigate_sub_label_score": event.frigate_sub_label_score,
+            }
         )
     except Exception as e:
         logger.error(f"Error processing Frigate event end for {event_id}: {e}", exc_info=True)
