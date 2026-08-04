@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.3
+
+- Fix: `onnxruntime` fehlte komplett in `requirements.txt`. `insightface` benötigt es zur Laufzeit
+  als eigentliche Inference-Engine (`onnx` ist nur das Modellformat), deklariert es aber selbst
+  nicht als Abhängigkeit in seinen PyPI-Metadaten — daher installierte `pip install insightface`
+  es nie automatisch mit. Auf `1.18.1` gepinnt (kompatibel mit dem gepinnten `numpy==1.24.4`).
+- Zusätzlich: alle Backend-Imports einmal vollständig gegen `requirements.txt` geprüft
+  (`grep` über `app/`) — keine weiteren Lücken gefunden.
+
 ## 1.0.2
 
 - Fix: `opencv-python` (GUI-Variante) durch `opencv-python-headless` ersetzt — die volle
