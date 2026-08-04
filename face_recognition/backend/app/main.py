@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Depends, HTTPException, WebSocket, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -48,28 +48,28 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
         if not request.url.path.startswith("/api"):
             return await call_next(request)
 
+        # Note: raising HTTPException here would NOT produce a clean 401 — a
+        # BaseHTTPMiddleware's dispatch() sits outside FastAPI's exception-handling
+        # middleware layer, so exceptions raised here escape as unhandled and are
+        # turned into a generic 500 by Starlette's ServerErrorMiddleware instead.
+        # Returning a Response directly is the correct way to short-circuit here.
         auth_header = request.headers.get("Authorization")
-        if not auth_header:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing authorization header",
-                headers={"WWW-Authenticate": "Basic"},
-            )
+        if auth_header:
+            try:
+                scheme, credentials = auth_header.split(" ", 1)
+                if scheme.lower() == "basic":
+                    decoded = b64decode(credentials).decode("utf-8")
+                    username, password = decoded.split(":", 1)
+                    if username == settings.auth_username and password == settings.auth_password:
+                        return await call_next(request)
+            except Exception as e:
+                logger.warning(f"Auth error: {e}")
 
-        try:
-            scheme, credentials = auth_header.split(" ", 1)
-            if scheme.lower() != "basic":
-                raise ValueError
-            decoded = b64decode(credentials).decode("utf-8")
-            username, password = decoded.split(":", 1)
-
-            if username == settings.auth_username and password == settings.auth_password:
-                return await call_next(request)
-            else:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
-        except Exception as e:
-            logger.warning(f"Auth error: {e}")
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"detail": "Unauthorized"},
+            headers={"WWW-Authenticate": "Basic"},
+        )
 
 
 if settings.auth_enabled:

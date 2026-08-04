@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.5
+
+- Fix: Fehlende/falsche Basic-Auth-Header führten zu `500 Internal Server Error` statt zum
+  korrekten `401 Unauthorized`. Ursache: `BasicAuthMiddleware` warf `raise HTTPException(...)`
+  direkt aus `dispatch()`. Bei `BaseHTTPMiddleware` liegt dieser Code aber außerhalb der
+  FastAPI-Exception-Handling-Schicht — die Exception landet unbehandelt bei Starlettes
+  `ServerErrorMiddleware` und wird zu einem generischen 500. Fix: die Middleware gibt bei
+  fehlender/falscher Auth jetzt direkt eine `JSONResponse(401)` zurück statt zu `raise`n.
+  Betraf alle `/api/*`-Aufrufe ohne (oder mit falschem) Basic-Auth-Header.
+
 ## 1.0.4
 
 - Fix: `AttributeError: module 'paho.mqtt.client' has no attribute 'CallbackAPIVersion'` beim
