@@ -49,6 +49,9 @@ export const frigateAPI = {
   listSnapshots: (limit = 50) => api.get('/frigate/snapshots', { params: { limit } }),
   importSnapshot: (eventId, personId) =>
     api.post(`/frigate/import/${eventId}`, { person_id: personId }),
+  listTrainedFaces: () => api.get('/frigate/faces'),
+  importTrainedFaces: (name, filenames, personId) =>
+    api.post('/frigate/faces/import', { name, filenames, person_id: personId }),
 }
 
 // Health

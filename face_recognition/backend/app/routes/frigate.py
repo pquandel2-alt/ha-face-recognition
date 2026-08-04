@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -85,6 +86,109 @@ def get_snapshot(
     if not image_bytes:
         raise HTTPException(status_code=404, detail="Snapshot not found")
     return Response(content=image_bytes, media_type="image/jpeg")
+
+
+@router.get("/faces")
+def list_trained_faces(frigate: FrigateService = Depends(get_frigate_service)):
+    """
+    List Frigate's own trained face images (from Frigate's built-in Face
+    Recognition feature), grouped by person name.
+    """
+    faces = frigate.get_trained_faces()
+    return {
+        "faces": {name: files for name, files in faces.items()},
+        "names": list(faces.keys()),
+    }
+
+
+def _safe_face_path_part(value: str) -> str:
+    if not value or "/" in value or ".." in value:
+        raise HTTPException(status_code=400, detail="Invalid path segment")
+    return value
+
+
+@router.get("/faces/{name}/{filename}")
+def get_face_image(
+    name: str,
+    filename: str,
+    frigate: FrigateService = Depends(get_frigate_service),
+):
+    """Proxy one of Frigate's trained face images."""
+    name = _safe_face_path_part(name)
+    filename = _safe_face_path_part(filename)
+    image_bytes = frigate.get_face_image(name, filename)
+    if not image_bytes:
+        raise HTTPException(status_code=404, detail="Face image not found")
+    return Response(content=image_bytes, media_type="image/webp")
+
+
+class FaceImportRequest(BaseModel):
+    name: str
+    filenames: list[str]
+    person_id: int
+
+
+@router.post("/faces/import")
+def import_trained_faces(
+    body: FaceImportRequest,
+    db: Session = Depends(get_db),
+    frigate: FrigateService = Depends(get_frigate_service),
+):
+    """
+    Import a batch of Frigate's own trained face images (already classified by
+    Frigate's Face Recognition feature) as training images for a person.
+    """
+    person = db.query(Person).filter_by(id=body.person_id).first()
+    if not person:
+        raise HTTPException(status_code=404, detail="Person not found")
+
+    name = _safe_face_path_part(body.name)
+
+    engine = get_face_engine()
+    imported = []
+    skipped = []
+
+    for filename in body.filenames:
+        filename = _safe_face_path_part(filename)
+        try:
+            image_bytes = frigate.get_face_image(name, filename)
+            if not image_bytes:
+                skipped.append(filename)
+                continue
+
+            local_filename = f"{body.person_id}_{uuid.uuid4().hex}_frigate_face_{filename}"
+            filepath = settings.data_dir / "images" / local_filename
+
+            with open(filepath, "wb") as f:
+                f.write(image_bytes)
+
+            embeddings = engine.detect_and_embed_bytes(image_bytes)
+
+            training_image = TrainingImage(
+                person_id=body.person_id,
+                filename=local_filename,
+                face_detected=bool(embeddings),
+                source="frigate_import",
+            )
+            db.add(training_image)
+            db.commit()
+            db.refresh(training_image)
+            imported.append(training_image.id)
+        except Exception as e:
+            logger.error(f"Error importing Frigate face image {name}/{filename}: {e}")
+            skipped.append(filename)
+
+    logger.info(
+        f"Imported {len(imported)} Frigate face images for {person.name} "
+        f"({len(skipped)} skipped)"
+    )
+
+    return {
+        "person_id": body.person_id,
+        "imported": len(imported),
+        "skipped": skipped,
+        "training_image_ids": imported,
+    }
 
 
 @router.post("/import/{event_id}")

@@ -57,6 +57,34 @@ class FrigateService:
             logger.error(f"Error fetching thumbnail for event {event_id}: {e}")
             return None
 
+    def get_trained_faces(self) -> dict:
+        """
+        Get Frigate's own trained face images (Frigate's built-in Face Recognition
+        feature), grouped by person name. Excludes the 'train' bucket, which holds
+        Frigate's auto-collected recognition attempts rather than manually trained faces.
+        """
+        try:
+            url = f"{self.base_url}/api/faces"
+            response = requests.get(url, timeout=self.timeout)
+            response.raise_for_status()
+            data = response.json()
+            data.pop("train", None)
+            return data
+        except Exception as e:
+            logger.error(f"Error fetching Frigate trained faces: {e}")
+            return {}
+
+    def get_face_image(self, name: str, filename: str) -> Optional[bytes]:
+        """Get one of Frigate's trained face images by person name + filename."""
+        try:
+            url = f"{self.base_url}/clips/faces/{name}/{filename}"
+            response = requests.get(url, timeout=self.timeout)
+            response.raise_for_status()
+            return response.content
+        except Exception as e:
+            logger.error(f"Error fetching Frigate face image {name}/{filename}: {e}")
+            return None
+
     def health_check(self) -> bool:
         """Check if Frigate API is reachable."""
         try:

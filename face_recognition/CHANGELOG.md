@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.0.9
+
+- Fix: „Frigate Import" zeigte nach dem Routing-Fix in 1.0.7 zwar Bilder an, aber die falschen —
+  generische Frigate-Bewegungserkennungs-Snapshots (`label=person`-Events) statt der Gesichter,
+  mit denen Frigates eigene Face-Recognition-Funktion bereits trainiert wurde. Frigate führt
+  intern eine komplett getrennte, bereits nach Personennamen sortierte Galerie manuell trainierter
+  Gesichtsbilder (`GET /api/faces` → `{Name: [Dateinamen], ...}`, Bilder unter
+  `/clips/faces/{Name}/{Datei}`) — genau das wollte der Nutzer importieren können, nicht die
+  rohen Bewegungs-Thumbnails.
+  Neu: Tab „Trainierte Gesichter (aus Frigate)" auf der Import-Seite (jetzt Standard-Tab) zeigt
+  je Frigate-Personenname eine Bildergalerie, mit Mehrfachauswahl, Zuordnung zu einer bestehenden
+  oder neu anzulegenden Person, und Batch-Import als Trainingsbilder. Der bisherige generische
+  Ereignis-Import bleibt als zweiter Tab „Personen-Ereignisse" erhalten (weiterhin nützlich für
+  Personen, die Frigate noch nicht selbst gelernt hat).
+  Backend: `frigate_service.py` um `get_trained_faces()` (holt `/api/faces`, entfernt den
+  `train`-Schlüssel — das ist Frigates automatische, unbestätigte Erkennungs-Sammlung, keine
+  manuell trainierten Bilder) und `get_face_image(name, filename)` ergänzt. Neue Routen
+  `GET /api/frigate/faces` (Liste), `GET /api/frigate/faces/{name}/{filename}` (Bild-Proxy,
+  mit Pfad-Traversal-Schutz) und `POST /api/frigate/faces/import` (Batch-Import inkl.
+  Gesichtserkennung auf den importierten Bildern) in `routes/frigate.py`.
+  Frontend: `AuthImage`-Komponente verallgemeinert (vorher `FrigateThumbnail`, jetzt beliebige
+  Proxy-URL statt nur Event-Thumbnails) und für beide Tabs wiederverwendet.
+
 ## 1.0.8
 
 - Entfernt: die app-interne Basic-Auth-Anmeldung (Backend-Middleware, `LoginGate`-Login-Formular,
