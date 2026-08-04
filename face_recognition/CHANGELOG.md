@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.4
+
+- Fix: `AttributeError: module 'paho.mqtt.client' has no attribute 'CallbackAPIVersion'` beim
+  Start. `mqtt_service.py` ist komplett auf die paho-mqtt-2.x-API geschrieben
+  (`mqtt.CallbackAPIVersion.VERSION2`, `on_connect`/`on_disconnect` mit `reason_code`/
+  `properties`), `requirements.txt` pinnte aber noch die alte `1.6.1` (dort existiert die
+  Callback-API-Versionierung schlicht nicht). Auf `2.1.0` angehoben. Geprüft: es gibt im
+  Code nur diese eine Stelle, die paho-mqtt nutzt — keine weiteren Versions-Konflikte.
+
 ## 1.0.3
 
 - Fix: `onnxruntime` fehlte komplett in `requirements.txt`. `insightface` benötigt es zur Laufzeit
