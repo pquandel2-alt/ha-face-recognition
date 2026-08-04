@@ -165,7 +165,7 @@ Response:
 
 ### Speicherung
 ```
-/app/data/images/
+/data/images/
 ├── 1_abc123_frigate_event123.jpg  (Person 1, imported from Frigate)
 ├── 1_def456_upload.jpg            (Person 1, manually uploaded)
 ├── 2_ghi789_frigate_event456.jpg  (Person 2, imported)
@@ -243,7 +243,7 @@ Fix:
 ```
 Error beim Import
 Fix:
-  - Prüfe Logs: docker compose logs api | grep import
+  - Prüfe Logs: docker compose logs face-recognition | grep import
   - Erhöhe API_TIMEOUT in config.py
   - Stelle sicher person_id existiert
 ```

@@ -1,5 +1,10 @@
 # Deployment auf Home Assistant Host
 
+> **Hinweis**: Für Home Assistant OS/Supervised ist die Installation als **natives Add-on**
+> über den Add-on Store der empfohlene Weg (siehe README.md, „Option A"). Diese Anleitung hier
+> beschreibt den manuellen docker-compose-Weg über SSH — nützlich für Core-Installationen oder
+> wenn kein Supervisor verfügbar ist.
+
 Schritt-für-Schritt Anleitung zum Deployment auf dem HA-System.
 
 ## Voraussetzungen
@@ -103,26 +108,25 @@ docker compose logs | head -50
 
 # Warten bis healthy
 sleep 30
-docker compose logs api | tail -20
+docker compose logs face-recognition | tail -20
 START
 ```
 
 Expected Output:
 ```
-face-recognition-api       Up (healthy)
-face-recognition-frontend  Up (healthy)
+face-recognition   Up (healthy)
 ```
 
 Wenn `Exited`:
 ```bash
-ssh ha-host "cd /opt/ha-face-recognition && docker compose logs api"
+ssh ha-host "cd /opt/ha-face-recognition && docker compose logs face-recognition"
 ```
 
 ## Schritt 5: Zugriff über Web-UI
 
 UI erreichbar unter:
 ```
-http://192.168.1.100:3080
+http://192.168.1.100:8080
 ```
 
 Login: `admin` / `SuperSecurePassword123!`
@@ -194,7 +198,7 @@ UPDATE
 
 ### Logs streamen
 ```bash
-ssh ha-host "cd /opt/ha-face-recognition && docker compose logs -f api"
+ssh ha-host "cd /opt/ha-face-recognition && docker compose logs -f face-recognition"
 ```
 
 ### Resource-Nutzung
@@ -213,11 +217,11 @@ ssh ha-host << 'CLEANUP'
 cd /opt/ha-face-recognition
 
 # Events älter als 30 Tage löschen
-docker compose exec api sqlite3 /app/data/face_db.db \
+docker compose exec face-recognition sqlite3 /data/face_db.db \
   "DELETE FROM recognition_events WHERE timestamp < datetime('now', '-30 days');"
 
 # Anzahl überbleibender Events
-docker compose exec api sqlite3 /app/data/face_db.db \
+docker compose exec face-recognition sqlite3 /data/face_db.db \
   "SELECT COUNT(*) FROM recognition_events;"
 CLEANUP
 ```
@@ -248,7 +252,7 @@ ssh ha-host << 'RESTORE'
 cd /opt/ha-face-recognition
 rm -rf data/
 tar xzf /tmp/face_recognition_backup_20260803.tar.gz
-docker compose restart api
+docker compose restart face-recognition
 RESTORE
 ```
 
@@ -256,7 +260,7 @@ RESTORE
 
 ### Container startet nicht
 ```bash
-ssh ha-host "cd /opt/ha-face-recognition && docker compose logs api | tail -50"
+ssh ha-host "cd /opt/ha-face-recognition && docker compose logs face-recognition | tail -50"
 ```
 
 ### Port 8080/3080 bereits in Benutzung
@@ -320,7 +324,7 @@ API_WORKERS=1                 # weniger Worker
 
 Dann restart:
 ```bash
-ssh ha-host "cd /opt/ha-face-recognition && docker compose restart api"
+ssh ha-host "cd /opt/ha-face-recognition && docker compose restart face-recognition"
 ```
 
 ## Disk-Speicher
@@ -359,8 +363,7 @@ CLEANUP
 ## Support
 
 Fehler? Check:
-1. `docker compose logs api` — Backend Fehler
-2. `docker compose logs frontend` — Frontend Fehler
-3. Browser-Console (F12) — JavaScript Fehler
-4. HA Logs — MQTT Connection
-5. Logs im `DEPLOY_HA.md` im Repo
+1. `docker compose logs face-recognition` — Backend/Frontend-Fehler (ein Container für beides)
+2. Browser-Console (F12) — JavaScript Fehler
+3. HA Logs — MQTT Connection
+4. Logs im `DEPLOY_HA.md` im Repo

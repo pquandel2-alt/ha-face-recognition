@@ -2,9 +2,11 @@ import asyncio
 import logging
 from base64 import b64decode
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from fastapi import FastAPI, Depends, HTTPException, WebSocket, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -41,8 +43,9 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
         if not settings.auth_enabled:
             return await call_next(request)
 
-        # Skip auth for health check and root
-        if request.url.path in ["/health", "/"] or request.url.path.startswith("/docs"):
+        # Only /api/* is auth-protected; frontend assets, SPA deep-routes, /health
+        # and /docs are served openly (mirrors the old nginx security boundary).
+        if not request.url.path.startswith("/api"):
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization")
@@ -255,14 +258,24 @@ def health_check():
     }
 
 
-@app.get("/")
-def root():
-    """Root endpoint."""
-    return {
-        "service": "Face Recognition API",
-        "version": "1.0.0",
-        "docs": "/docs",
-    }
+FRONTEND_DIR = Path(__file__).parent / "static"
+
+if FRONTEND_DIR.is_dir():
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        """Serve the bundled React SPA, with client-side routing fallback."""
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+        candidate = FRONTEND_DIR / full_path
+        if full_path and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(FRONTEND_DIR / "index.html")
+
+else:
+    logger.warning(
+        "No built frontend found at %s — running API-only.", FRONTEND_DIR
+    )
 
 
 if __name__ == "__main__":

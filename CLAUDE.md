@@ -22,13 +22,13 @@ Home Assistant (Sensors via MQTT Discovery)
 
 ## Code-Organisation
 
-- **backend/app/main.py**: FastAPI App, MQTT Startup, Frigate Event Handler
-- **backend/app/services/face_engine.py**: InsightFace Wrapper + Embeddings + Matching
-- **backend/app/services/mqtt_service.py**: paho-mqtt Client + Publishing
-- **backend/app/routes/**: API Endpoints (persons, training, recognition, frigate)
-- **backend/app/models/**: SQLAlchemy ORM (persons, training_images, embeddings, events)
-- **frontend/src/pages/**: React Pages (4 Tab-Views)
-- **frontend/src/api.js**: Axios Wrapper mit Basic Auth
+- **face_recognition/backend/app/main.py**: FastAPI App, MQTT Startup, Frigate Event Handler
+- **face_recognition/backend/app/services/face_engine.py**: InsightFace Wrapper + Embeddings + Matching
+- **face_recognition/backend/app/services/mqtt_service.py**: paho-mqtt Client + Publishing
+- **face_recognition/backend/app/routes/**: API Endpoints (persons, training, recognition, frigate)
+- **face_recognition/backend/app/models/**: SQLAlchemy ORM (persons, training_images, embeddings, events)
+- **face_recognition/frontend/src/pages/**: React Pages (4 Tab-Views)
+- **face_recognition/frontend/src/api.js**: Axios Wrapper mit Basic Auth
 
 ## Key Concepts
 
@@ -65,7 +65,7 @@ confidence < 0.35  → unknown
 
 ### Backend Setup
 ```bash
-cd backend
+cd face_recognition/backend
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -74,13 +74,13 @@ python -m uvicorn app.main:app --reload
 
 ### Frontend Setup
 ```bash
-cd frontend
+cd face_recognition/frontend
 npm install
 npm run dev  # http://localhost:3080
 ```
 
 ### Database
-- SQLite embedded in `/app/data/face_db.db`
+- SQLite embedded in `/data/face_db.db`
 - Created on first startup via `init_db()`
 - ORM via SQLAlchemy in `app/models/`
 
@@ -132,34 +132,34 @@ Publishes `{"type": "recognition", "person": "...", "confidence": 0.9, ...}`
 
 ## Important Files
 
-**Backend Entry**: `backend/app/main.py`
+**Backend Entry**: `face_recognition/backend/app/main.py`
 - FastAPI app definition
 - MQTT connection + startup
 - Frigate event callback
 - WebSocket handler
 - HA Discovery publishing
 
-**Face Recognition**: `backend/app/services/face_engine.py`
+**Face Recognition**: `face_recognition/backend/app/services/face_engine.py`
 - InsightFace model loading
 - Face detection + embedding
 - Similarity matching
 - Person embedding computation
 
-**Frigate Service**: `backend/app/services/frigate_service.py`
+**Frigate Service**: `face_recognition/backend/app/services/frigate_service.py`
 - REST API calls to Frigate
 - Snapshot + thumbnail fetching
 - Event listing
 
-**Database Models**: `backend/app/models/person.py`, `event.py`
+**Database Models**: `face_recognition/backend/app/models/person.py`, `event.py`
 - Person, TrainingImage, Embedding, RecognitionEvent
 - Relationships + constraints
 
 ## Common Tasks
 
 ### Add a new endpoint
-1. Create route function in `backend/app/routes/`
+1. Create route function in `face_recognition/backend/app/routes/`
 2. Add `app.include_router()` in `main.py`
-3. Update frontend API wrapper in `frontend/src/api.js`
+3. Update frontend API wrapper in `face_recognition/frontend/src/api.js`
 4. Add React component/page if UI needed
 
 ### Change face model
@@ -198,7 +198,7 @@ sqlite3 data/face_db.db "SELECT * FROM persons;"
 ## Testing
 
 ### Manual Test: Upload & Recognition
-1. Open UI at http://localhost:3080
+1. Open UI at http://localhost:8080
 2. Create person "Test"
 3. Upload 3+ photos of same face
 4. Go to Training, click Train

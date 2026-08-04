@@ -1,0 +1,45 @@
+name: "Face Recognition"
+version: "1.0.0"
+slug: "face_recognition"
+description: "Lokale Gesichtserkennung mit InsightFace/ArcFace, Frigate-Integration und MQTT Discovery — läuft komplett offline im LAN."
+url: "https://github.com/pquandel2-alt/ha-face-recognition"
+arch:
+  - amd64
+startup: application
+boot: auto
+init: false
+ports:
+  8000/tcp: 8000
+ports_description:
+  8000/tcp: "Web UI / API"
+webui: "http://[HOST]:[PORT:8000]/"
+options:
+  mqtt_host: "core-mosquitto"
+  mqtt_port: 1883
+  mqtt_frigate_topic: "frigate/events"
+  mqtt_result_topic: "home/face_recognition/person"
+  mqtt_ha_discovery_prefix: "homeassistant"
+  frigate_api_url: "http://homeassistant.local:5000"
+  insightface_model: "buffalo_sc"
+  similarity_threshold_known: 0.50
+  similarity_threshold_unknown: 0.35
+  auth_username: "admin"
+  auth_password: "changeme"
+  auth_enabled: true
+  log_level: "INFO"
+schema:
+  mqtt_host: "str"
+  mqtt_port: "port"
+  mqtt_username: "str?"
+  mqtt_password: "password?"
+  mqtt_frigate_topic: "str"
+  mqtt_result_topic: "str"
+  mqtt_ha_discovery_prefix: "str"
+  frigate_api_url: "url"
+  insightface_model: "list(buffalo_sc|buffalo_s|buffalo_m|buffalo_l)"
+  similarity_threshold_known: "float(0,1)"
+  similarity_threshold_unknown: "float(0,1)"
+  auth_username: "str"
+  auth_password: "password"
+  auth_enabled: "bool"
+  log_level: "list(DEBUG|INFO|WARNING|ERROR)"

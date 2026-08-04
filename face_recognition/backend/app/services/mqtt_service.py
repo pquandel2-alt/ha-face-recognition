@@ -54,6 +54,8 @@ class MQTTService:
     def connect(self):
         """Connect to MQTT broker."""
         try:
+            if settings.mqtt_username:
+                self.client.username_pw_set(settings.mqtt_username, settings.mqtt_password)
             self.client.connect(settings.mqtt_host, settings.mqtt_port, keepalive=60)
             # Start background loop
             self._thread = threading.Thread(target=self.client.loop_forever, daemon=True)

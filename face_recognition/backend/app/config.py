@@ -1,14 +1,31 @@
+import json
 import logging
 from pathlib import Path
 from typing import Optional
 
 from pydantic_settings import BaseSettings
 
+HA_OPTIONS_PATH = Path("/data/options.json")
+
+
+def _load_ha_addon_options() -> dict:
+    """Read Supervisor-managed Options if present (HA Add-on mode)."""
+    if not HA_OPTIONS_PATH.is_file():
+        return {}
+    try:
+        with open(HA_OPTIONS_PATH) as f:
+            data = json.load(f)
+        return {k: v for k, v in data.items() if v is not None}
+    except Exception:
+        return {}
+
 
 class Settings(BaseSettings):
     # MQTT
     mqtt_host: str = "192.168.1.100"
     mqtt_port: int = 1883
+    mqtt_username: Optional[str] = None
+    mqtt_password: Optional[str] = None
     mqtt_frigate_topic: str = "frigate/events"
     mqtt_result_topic: str = "home/face_recognition/person"
     mqtt_ha_discovery_prefix: str = "homeassistant"
@@ -24,8 +41,8 @@ class Settings(BaseSettings):
     similarity_threshold_unknown: float = 0.35
 
     # Database
-    data_dir: Path = Path("/app/data")
-    database_url: str = "sqlite:////app/data/face_db.db"
+    data_dir: Path = Path("/data")
+    database_url: str = "sqlite:////data/face_db.db"
 
     # Auth
     auth_username: str = "admin"
@@ -47,7 +64,7 @@ class Settings(BaseSettings):
         extra = "ignore"
 
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        super().__init__(**{**_load_ha_addon_options(), **kwargs})
         # Ensure data directory exists
         self.data_dir.mkdir(parents=True, exist_ok=True)
         (self.data_dir / "images").mkdir(exist_ok=True)

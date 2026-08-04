@@ -10,15 +10,13 @@ docker compose ps
 
 Expected:
 ```
-NAME                    STATUS
-face-recognition-api       Up (healthy)
-face-recognition-frontend  Up (healthy)
+NAME               STATUS
+face-recognition   Up (healthy)
 ```
 
 Logs prüfen:
 ```bash
-docker compose logs api     # Backend logs
-docker compose logs frontend # Frontend logs
+docker compose logs face-recognition
 ```
 
 ## Schritt 2: API Health Check
@@ -38,11 +36,11 @@ Expected:
 Wenn `mqtt_connected: false`:
 - Prüfe MQTT_HOST in .env
 - Prüfe dass MQTT-Broker läuft
-- Logs: `docker compose logs api | grep MQTT`
+- Logs: `docker compose logs face-recognition | grep MQTT`
 
 ## Schritt 3: Web-UI laden
 
-Öffne: http://localhost:3080
+Öffne: http://localhost:8080
 
 Login: `admin` / `changeme`
 
@@ -153,10 +151,10 @@ Wenn nicht sichtbar:
 
 ```bash
 # Shell in Container
-docker compose exec api sh
+docker compose exec face-recognition sh
 
 # SQLite prüfen
-sqlite3 /app/data/face_db.db
+sqlite3 /data/face_db.db
 
 # SQL-Queries
 > SELECT * FROM persons;
@@ -178,17 +176,17 @@ time curl -u admin:changeme http://localhost:8080/api/persons
 ### Log-Analyse
 ```bash
 # Backend logs nach Fehler
-docker compose logs api | grep -i error
+docker compose logs face-recognition | grep -i error
 
 # MQTT debug
-docker compose logs api | grep -i mqtt
+docker compose logs face-recognition | grep -i mqtt
 ```
 
 ## Cleanup nach Tests
 
 ```bash
 # Alle Personen löschen (neue Runde)
-docker compose exec api sqlite3 /app/data/face_db.db \
+docker compose exec face-recognition sqlite3 /data/face_db.db \
   "DELETE FROM persons; DELETE FROM training_images; DELETE FROM recognition_events;"
 
 # Bilder löschen
@@ -226,7 +224,7 @@ SIMILARITY_THRESHOLD_KNOWN=0.55  # Schneller matchen (strikte)
 ### Speicheroptimierung
 ```bash
 # Alte Events löschen (älter als 30 Tage)
-docker compose exec api sqlite3 /app/data/face_db.db \
+docker compose exec face-recognition sqlite3 /data/face_db.db \
   "DELETE FROM recognition_events WHERE timestamp < datetime('now', '-30 days');"
 
 # Images Cleanup
@@ -267,6 +265,4 @@ echo "✓ E2E Test Complete!"
 
 ```bash
 docker compose logs > logs.txt
-docker compose logs api > backend.log
-docker compose logs frontend > frontend.log
 ```

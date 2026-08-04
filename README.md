@@ -27,13 +27,28 @@ Lokale Gesichtserkennungs-App für Home Assistant mit Frigate NVR Integration. K
 
 ## Installation
 
-### 1. Repository klonen
+### Option A: Als Home Assistant Add-on (empfohlen für HAOS/Supervised)
+
+1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**
+2. URL eintragen: `https://github.com/pquandel2-alt/ha-face-recognition`
+3. Add-on **„Face Recognition"** in der Liste öffnen → **Install**
+4. Im **„Configuration"**-Tab die Options ausfüllen (MQTT, Frigate-URL, Zugangsdaten — siehe
+   [face_recognition/DOCS.md](face_recognition/DOCS.md))
+5. **Start** → nach dem ersten Boot (Modell-Download, ca. 1-2 Minuten) über den
+   **„Open Web UI"**-Button erreichbar
+
+Falls der Store-Import mit „is not a valid app repository" fehlschlägt: den Repository-Eintrag
+entfernen und erneut hinzufügen (Supervisor cached fehlgeschlagene Versuche teils zwischen).
+
+### Option B: Docker Compose (manuell, z. B. via SSH auf den HA-Host)
+
+#### 1. Repository klonen
 ```bash
-git clone https://github.com/YOUR-USERNAME/ha-face-recognition.git
+git clone https://github.com/pquandel2-alt/ha-face-recognition.git
 cd ha-face-recognition
 ```
 
-### 2. Konfiguration
+#### 2. Konfiguration
 ```bash
 cp .env.example .env
 ```
@@ -57,7 +72,7 @@ SIMILARITY_THRESHOLD_KNOWN=0.50
 SIMILARITY_THRESHOLD_UNKNOWN=0.35
 ```
 
-### 3. Starten
+#### 3. Starten
 ```bash
 docker compose up -d --build
 ```
@@ -66,7 +81,7 @@ Die erste Build dauert ~5-10 Minuten (InsightFace-Modell wird heruntergeladen).
 
 ## Zugriff
 
-- **Web-UI**: http://localhost:3080
+- **Web-UI**: http://localhost:8080
 - **API**: http://localhost:8080/api
 - **API Docs**: http://localhost:8080/docs
 
@@ -200,8 +215,7 @@ SIMILARITY_THRESHOLD_UNKNOWN=0.35   # 0.35-0.50 = unsicher (wird als "unknown" g
 
 ### Docker Logs
 ```bash
-docker compose logs -f api      # Backend logs
-docker compose logs -f frontend # Frontend logs
+docker compose logs -f face-recognition
 ```
 
 ## Production-Deployment auf HA
@@ -212,7 +226,7 @@ docker compose logs -f frontend # Frontend logs
 ssh ha-host
 
 # Repository klonen
-git clone https://github.com/YOUR-USERNAME/ha-face-recognition.git
+git clone https://github.com/pquandel2-alt/ha-face-recognition.git
 cd ha-face-recognition
 
 # Konfigurieren
@@ -227,7 +241,7 @@ docker compose logs -f
 ```
 
 Die App läuft jetzt unter:
-- UI: http://ha-host:3080
+- UI: http://ha-host:8080
 - API: http://ha-host:8080/api
 
 ### Nginx Reverse-Proxy (optional)
@@ -272,7 +286,7 @@ find /data/images -type f -mtime +30 -delete
 
 Backend in Python:
 ```bash
-cd backend
+cd face_recognition/backend
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -281,7 +295,7 @@ python -m uvicorn app.main:app --reload
 
 Frontend in Node:
 ```bash
-cd frontend
+cd face_recognition/frontend
 npm install
 npm run dev    # auf http://localhost:3080
 npm run build  # Produktion
