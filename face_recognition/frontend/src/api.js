@@ -2,25 +2,8 @@ import axios from 'axios'
 
 const API_BASE = '/api'
 
-// Basic auth helper
-const getAuthHeader = () => {
-  const username = localStorage.getItem('auth_username') || ''
-  const password = localStorage.getItem('auth_password') || ''
-  const credentials = btoa(`${username}:${password}`)
-  return { Authorization: `Basic ${credentials}` }
-}
-
 const api = axios.create({
   baseURL: API_BASE,
-  headers: {
-    ...getAuthHeader(),
-  },
-})
-
-// Update headers on each request
-api.interceptors.request.use((config) => {
-  config.headers = { ...config.headers, ...getAuthHeader() }
-  return config
 })
 
 // Persons API

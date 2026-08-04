@@ -17,7 +17,6 @@ keine Cloud-Anbindung.
 | `frigate_api_url` | Basis-URL der Frigate-REST-API, z. B. `http://homeassistant.local:5000` |
 | `insightface_model` | `buffalo_sc` (schnell) bis `buffalo_l` (genauer, langsamer) |
 | `similarity_threshold_known` / `_unknown` | Konfidenz-Schwellwerte für Matching |
-| `auth_username` / `auth_password` / `auth_enabled` | Basic-Auth für die Web-UI/API |
 | `log_level` | Log-Verbosität |
 
 Nach dem ersten Start lädt das Add-on das InsightFace-Modell einmalig aus dem Internet
@@ -25,10 +24,8 @@ herunter (danach läuft die Erkennung komplett offline).
 
 ## Web-UI
 
-Über den „Open Web UI"-Button im Add-on erreichbar. Login mit `auth_username`/`auth_password`.
-
-**Wichtig**: Ändere `auth_password` vor dem ersten produktiven Einsatz — das Add-on läuft
-ohne Ingress auf einem gemappten Host-Port.
+Über den „Open Web UI"-Button im Add-on erreichbar — kein separater Login, Zugriffsschutz
+kommt über Home-Assistant-Login + LAN-Zugriff.
 
 ## Erste Schritte
 

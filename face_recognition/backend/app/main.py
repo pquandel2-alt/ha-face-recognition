@@ -1,14 +1,12 @@
 import asyncio
 import logging
-from base64 import b64decode
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from fastapi import FastAPI, Depends, HTTPException, WebSocket, status
+from fastapi import FastAPI, Depends, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from starlette.middleware.base import BaseHTTPMiddleware
 
 from config import settings
 from database import init_db, get_db, SessionLocal
@@ -36,44 +34,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# Auth middleware
-class BasicAuthMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        if not settings.auth_enabled:
-            return await call_next(request)
-
-        # Only /api/* is auth-protected; frontend assets, SPA deep-routes, /health
-        # and /docs are served openly (mirrors the old nginx security boundary).
-        if not request.url.path.startswith("/api"):
-            return await call_next(request)
-
-        # Note: raising HTTPException here would NOT produce a clean 401 — a
-        # BaseHTTPMiddleware's dispatch() sits outside FastAPI's exception-handling
-        # middleware layer, so exceptions raised here escape as unhandled and are
-        # turned into a generic 500 by Starlette's ServerErrorMiddleware instead.
-        # Returning a Response directly is the correct way to short-circuit here.
-        auth_header = request.headers.get("Authorization")
-        if auth_header:
-            try:
-                scheme, credentials = auth_header.split(" ", 1)
-                if scheme.lower() == "basic":
-                    decoded = b64decode(credentials).decode("utf-8")
-                    username, password = decoded.split(":", 1)
-                    if username == settings.auth_username and password == settings.auth_password:
-                        return await call_next(request)
-            except Exception as e:
-                logger.warning(f"Auth error: {e}")
-
-        return JSONResponse(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            content={"detail": "Unauthorized"},
-            headers={"WWW-Authenticate": "Basic"},
-        )
-
-
-if settings.auth_enabled:
-    app.add_middleware(BasicAuthMiddleware)
 
 # Include routes
 app.include_router(persons.router, prefix="/api")

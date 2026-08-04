@@ -44,11 +44,6 @@ class Settings(BaseSettings):
     data_dir: Path = Path("/data")
     database_url: str = "sqlite:////data/face_db.db"
 
-    # Auth
-    auth_username: str = "admin"
-    auth_password: str = "changeme"
-    auth_enabled: bool = True
-
     # Logging
     log_level: str = "INFO"
 

@@ -28,7 +28,7 @@ Home Assistant (Sensors via MQTT Discovery)
 - **face_recognition/backend/app/routes/**: API Endpoints (persons, training, recognition, frigate)
 - **face_recognition/backend/app/models/**: SQLAlchemy ORM (persons, training_images, embeddings, events)
 - **face_recognition/frontend/src/pages/**: React Pages (4 Tab-Views)
-- **face_recognition/frontend/src/api.js**: Axios Wrapper mit Basic Auth
+- **face_recognition/frontend/src/api.js**: Axios Wrapper für Backend-Calls
 
 ## Key Concepts
 
@@ -85,13 +85,11 @@ npm run dev  # http://localhost:3080
 - ORM via SQLAlchemy in `app/models/`
 
 ### Configuration
-- `config.py`: Pydantic BaseSettings (reads from .env)
-- All endpoints require Basic Auth (unless disabled)
+- `config.py`: Pydantic BaseSettings (reads from .env / HA add-on options)
+- No app-level auth — protected only by HA login + LAN access, like most HA add-ons
 - MQTT connection happens on app startup
 
 ## API Reference
-
-All endpoints require Basic Auth header unless `AUTH_ENABLED=false`.
 
 ### Persons
 ```

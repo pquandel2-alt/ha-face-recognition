@@ -80,10 +80,6 @@ MQTT_PORT=1883
 # Frigate (läuft als HA Add-on, normalerweise localhost)
 FRIGATE_API_URL=http://127.0.0.1:5000
 
-# Auth (ÄNDERN!)
-AUTH_USERNAME=admin
-AUTH_PASSWORD=SuperSecurePassword123!
-
 # Face Recognition
 INSIGHTFACE_MODEL=buffalo_sc
 

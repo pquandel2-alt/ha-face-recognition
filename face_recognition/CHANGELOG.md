@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.8
+
+- Entfernt: die app-interne Basic-Auth-Anmeldung (Backend-Middleware, `LoginGate`-Login-Formular,
+  `auth_username`/`auth_password`/`auth_enabled`-Optionen) ist komplett raus, auf Nutzerwunsch.
+  Die App läuft ohnehin nur im LAN, geschützt durch den Zugriffsschutz von Home Assistant selbst —
+  ein zusätzliches App-Login war unnötige Reibung ohne echten Sicherheitsgewinn, wie bei den
+  meisten HA-Add-ons üblich (kein Ingress-Login o.ä.). `/api/*` ist jetzt offen erreichbar wie
+  Frontend-Assets und `/health` es vorher schon waren.
+  Betroffen: `backend/app/main.py` (BasicAuthMiddleware entfernt), `backend/app/config.py`
+  (auth_* Settings entfernt), `config.yaml` (Options + Schema bereinigt), `frontend/src/api.js`
+  (kein Basic-Auth-Header mehr), `frontend/src/components/LoginGate.jsx` gelöscht,
+  `frontend/src/App.jsx` (kein Login-Gate, kein Abmelden-Button mehr).
+
 ## 1.0.7
 
 - Fix (echter Root-Cause hinter „Login funktioniert nicht" + „Frigate Import kaputt"):

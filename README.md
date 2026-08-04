@@ -62,10 +62,6 @@ MQTT_PORT=1883
 # Frigate
 FRIGATE_API_URL=http://192.168.1.100:5000
 
-# Auth
-AUTH_USERNAME=admin
-AUTH_PASSWORD=dein-sicheres-passwort
-
 # Face Recognition
 INSIGHTFACE_MODEL=buffalo_sc  # oder buffalo_l für bessere Genauigkeit
 SIMILARITY_THRESHOLD_KNOWN=0.50
