@@ -32,6 +32,26 @@ class FaceEngine:
             logger.error(f"Failed to initialize FaceAnalysis: {e}")
             raise
 
+    def _get_faces(self, img: np.ndarray) -> list:
+        """
+        Run face detection, with a padded-retry fallback.
+
+        Tightly cropped face chips (e.g. Frigate's own trained-face images,
+        which fill almost the entire frame with no surrounding context) often
+        fail RetinaFace-style detection outright — the detector expects some
+        margin around the face like a normal photo has. If the first pass
+        finds nothing, retry once against a padded copy of the image.
+        """
+        faces = self.face_analysis.get(img)
+        if not faces:
+            h, w = img.shape[:2]
+            pad_h, pad_w = h // 2, w // 2
+            padded = cv2.copyMakeBorder(
+                img, pad_h, pad_h, pad_w, pad_w, cv2.BORDER_REPLICATE
+            )
+            faces = self.face_analysis.get(padded)
+        return faces
+
     def detect_and_embed(self, image_path: str | Path) -> List[np.ndarray]:
         """
         Detect all faces in image and return embeddings.
@@ -43,7 +63,7 @@ class FaceEngine:
                 logger.warning(f"Failed to read image: {image_path}")
                 return []
 
-            faces = self.face_analysis.get(img)
+            faces = self._get_faces(img)
             embeddings = [face.embedding for face in faces]
             logger.debug(f"Detected {len(faces)} faces in {image_path}")
             return embeddings
@@ -62,7 +82,7 @@ class FaceEngine:
                 logger.warning("Failed to decode image from bytes")
                 return []
 
-            faces = self.face_analysis.get(img)
+            faces = self._get_faces(img)
             embeddings = [face.embedding for face in faces]
             logger.debug(f"Detected {len(faces)} faces from bytes")
             return embeddings

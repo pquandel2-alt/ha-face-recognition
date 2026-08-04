@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.0.10
+
+- Fix (Log-Analyse nach Nutzer-Fehlermeldung: „Nach dem 4. Training kommen Fehlermeldungen"):
+  `POST /api/training/{person_id}` schlug für Personen mit wenigen importierten Frigate-Bildern
+  mit `400: Failed to compute embedding (no faces detected)` fehl (konkret: Andy, 2 importierte
+  Bilder, 0 davon als Gesicht erkannt). Ursache: `compute_person_embedding()` lässt InsightFace
+  beim Training auf jedem Trainingsbild erneut eine eigene Gesichtserkennung laufen — auch auf
+  Frigates eigenen, bereits eng zugeschnittenen trainierten Gesichts-Crops (aus dem in 1.0.9
+  hinzugefügten Import-Feature). Diese Crops füllen fast den kompletten Bildrahmen ohne Rand;
+  InsightFace' RetinaFace-Detektor ist aber auf normale Fotos mit Kontext um das Gesicht trainiert
+  und scheitert bei randlosen Ausschnitten häufig komplett. Das betraf nicht nur Andy sichtbar:
+  bei Philipp z.B. wurden nur 13 von 32 importierten Bildern erkannt — bei genug Puffer fiel das
+  nur nicht als harter Fehler auf, bei Andy mit nur 2 Bildern (0 Treffer) schon.
+  Fix: `face_engine.py` versucht bei einem leeren Erkennungs-Ergebnis jetzt automatisch einen
+  zweiten Durchlauf auf einer gepolsterten Kopie des Bildes (Rand von 50 % der Bildgröße,
+  `cv2.copyMakeBorder` mit `BORDER_REPLICATE`) — gibt dem Detektor den fehlenden Kontext-Rand
+  zurück, ohne normale Fotos zu beeinflussen (dort wird der erste Durchlauf ohnehin fündig).
+  Betroffene Personen (v.a. Andy) sollten das Training nach dem Update erneut anstoßen; bereits
+  erfolgreich trainierte Personen können optional neu trainiert werden, um zusätzliche, vorher
+  übersprungene Bilder mit einzubeziehen.
+
 ## 1.0.9
 
 - Fix: „Frigate Import" zeigte nach dem Routing-Fix in 1.0.7 zwar Bilder an, aber die falschen —
