@@ -116,7 +116,7 @@ def on_frigate_event(payload: dict):
 
         # Get snapshot and analyze
         frigate = FrigateService()
-        snapshot_bytes = frigate.get_snapshot(event_id)
+        snapshot_bytes = frigate.get_snapshot(event_id, crop=True)
         if not snapshot_bytes:
             logger.warning(f"Could not get snapshot for event {event_id}")
             return

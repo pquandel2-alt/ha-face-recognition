@@ -46,11 +46,19 @@ class FrigateService:
             logger.error(f"Error fetching Frigate event {event_id}: {e}")
             return None
 
-    def get_snapshot(self, event_id: str) -> Optional[bytes]:
-        """Get snapshot for a Frigate event."""
+    def get_snapshot(self, event_id: str, crop: bool = False) -> Optional[bytes]:
+        """
+        Get snapshot for a Frigate event.
+
+        crop=True requests Frigate's variant cropped tightly to the tracked
+        object's bounding box instead of the full camera frame — the "new"
+        event snapshot is often still far/small in the full frame, which
+        hurts our own face detector's hit rate.
+        """
         try:
             url = f"{self.base_url}/api/events/{event_id}/snapshot.jpg"
-            response = requests.get(url, timeout=self.timeout)
+            params = {"crop": 1} if crop else None
+            response = requests.get(url, params=params, timeout=self.timeout)
             response.raise_for_status()
             return response.content
         except Exception as e:

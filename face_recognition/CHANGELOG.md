@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.12
+
+- Verbesserung (aus der Auswertung der Frigate-Vergleichsdaten aus 1.0.11: bei 5 von 9 Events
+  hatte unsere eigene Analyse gar kein Gesicht gefunden, Konfidenz 0): Der Snapshot für die
+  Live-Erkennung beim `"new"`-Frigate-Event wurde bisher als volles Kamerabild abgerufen
+  (`/api/events/{id}/snapshot.jpg`). Direkt beim Auftauchen im Bild ist die Person darauf oft
+  noch klein/weit entfernt — schlechte Ausgangslage für InsightFace' eigenen Gesichtsdetektor.
+  Fix: `frigate_service.get_snapshot()` unterstützt jetzt einen `crop`-Parameter, der Frigates
+  `crop=1`-Query-Option nutzt (eng auf die Bounding-Box des erkannten Objekts zugeschnitten statt
+  volles Kamerabild). Der Live-Erkennungspfad in `main.py::on_frigate_event` ruft den Snapshot
+  jetzt mit `crop=True` ab. Betrifft nur die Live-MQTT-Erkennung — der Frigate-Import
+  (Trainingsbilder) und die Snapshot-Vorschau im Frontend nutzen weiterhin das volle Bild.
+
 ## 1.0.11
 
 - Neu (auf Nutzerwunsch: Vergleich der eigenen Erkennung mit Frigates eingebauter
