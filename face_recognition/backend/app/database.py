@@ -63,7 +63,10 @@ def _migrate_add_missing_columns():
         existing_training_columns = {
             row[1] for row in conn.exec_driver_sql("PRAGMA table_info(training_images)")
         }
-        for column, ddl_type in (("frigate_source_filename", "VARCHAR(500)"),):
+        for column, ddl_type in (
+            ("frigate_source_filename", "VARCHAR(500)"),
+            ("quality_warning", "VARCHAR(255)"),
+        ):
             if column not in existing_training_columns:
                 logger.info(f"Migrating: adding column {column} to training_images")
                 conn.exec_driver_sql(

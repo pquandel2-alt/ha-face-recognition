@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from config import settings
 from database import get_db
 from models.person import Person, TrainingImage
+from routes.training import get_face_engine
 
 logger = logging.getLogger(__name__)
 
@@ -117,11 +118,14 @@ async def upload_training_image(
         with open(filepath, "wb") as f:
             f.write(content)
 
+        quality_warning = get_face_engine().assess_quality(content)
+
         # Create training image record
         training_image = TrainingImage(
             person_id=person_id,
             filename=filename,
             source="upload",
+            quality_warning=quality_warning,
         )
         db.add(training_image)
         db.commit()
@@ -133,6 +137,7 @@ async def upload_training_image(
             "person_id": person_id,
             "filename": filename,
             "source": "upload",
+            "quality_warning": quality_warning,
             "created_at": training_image.created_at.isoformat(),
         }
     except Exception as e:
@@ -155,6 +160,7 @@ def list_training_images(person_id: int, db: Session = Depends(get_db)):
             "face_detected": img.face_detected,
             "has_embedding": img.has_embedding,
             "source": img.source,
+            "quality_warning": img.quality_warning,
             "created_at": img.created_at.isoformat(),
         }
         for img in images

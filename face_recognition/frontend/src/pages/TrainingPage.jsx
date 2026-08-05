@@ -18,11 +18,30 @@ export default function TrainingPage() {
     },
   })
 
+  const trainBatchMutation = useMutation({
+    mutationFn: () => trainingAPI.trainBatch(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['training_status'] })
+      queryClient.invalidateQueries({ queryKey: ['persons'] })
+    },
+  })
+
   if (isLoading) return <div className="text-center py-8">Loading...</div>
+
+  const trainableCount = status.filter((p) => p.image_count > 0).length
 
   return (
     <div>
-      <h2 className="text-3xl font-bold mb-6">Training</h2>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-3xl font-bold">Training</h2>
+        <button
+          onClick={() => trainBatchMutation.mutate()}
+          disabled={trainableCount === 0 || trainBatchMutation.isPending}
+          className="bg-green-600 hover:bg-green-700 px-6 py-2 rounded font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {trainBatchMutation.isPending ? 'Training all...' : `Train All (${trainableCount})`}
+        </button>
+      </div>
 
       <div className="bg-blue-900 bg-opacity-20 border border-blue-600 p-4 rounded mb-8">
         <p className="text-sm text-blue-200">
@@ -30,6 +49,19 @@ export default function TrainingPage() {
           You need at least one image per person.
         </p>
       </div>
+
+      {trainBatchMutation.data && (
+        <div className="bg-gray-800 border border-green-600 p-4 rounded mb-8 text-sm">
+          Trained {trainBatchMutation.data.data.trained} of{' '}
+          {trainBatchMutation.data.data.trained + trainBatchMutation.data.data.failed} persons.
+        </div>
+      )}
+
+      {trainBatchMutation.error && (
+        <div className="text-red-400 text-sm mb-8">
+          {trainBatchMutation.error.response?.data?.detail || 'Batch training failed'}
+        </div>
+      )}
 
       <div className="space-y-4">
         {status.map((person) => (

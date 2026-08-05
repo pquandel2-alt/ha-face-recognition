@@ -32,6 +32,10 @@ class MQTTService:
             logger.info(f"Connected to MQTT broker {settings.mqtt_host}:{settings.mqtt_port}")
             self.connected = True
             client.subscribe(settings.mqtt_frigate_topic)
+            # Mark ourselves available now that we're actually connected —
+            # the Last Will (set in connect()) takes over and flips this to
+            # "offline" automatically if the connection drops uncleanly.
+            client.publish(settings.mqtt_availability_topic, "online", qos=1, retain=True)
         else:
             logger.error(f"MQTT connection failed: {reason_code}")
             self.connected = False
@@ -56,6 +60,11 @@ class MQTTService:
         try:
             if settings.mqtt_username:
                 self.client.username_pw_set(settings.mqtt_username, settings.mqtt_password)
+            # Last Will: if the container crashes or the connection drops
+            # without a clean disconnect, the broker publishes this on our
+            # behalf so HA's sensors show "unavailable" instead of silently
+            # keeping the last-known person/confidence forever.
+            self.client.will_set(settings.mqtt_availability_topic, "offline", qos=1, retain=True)
             self.client.connect(settings.mqtt_host, settings.mqtt_port, keepalive=60)
             # Start background loop
             self._thread = threading.Thread(target=self.client.loop_forever, daemon=True)
@@ -67,6 +76,12 @@ class MQTTService:
 
     def disconnect(self):
         """Disconnect from MQTT broker."""
+        # A clean disconnect doesn't trigger the Last Will, so mark
+        # unavailable explicitly before closing the connection.
+        try:
+            self.client.publish(settings.mqtt_availability_topic, "offline", qos=1, retain=True)
+        except Exception as e:
+            logger.warning(f"Failed to publish offline availability: {e}")
         self.client.disconnect()
 
     def publish_recognition(self, person_name: str, confidence: float, camera: str, timestamp: str):

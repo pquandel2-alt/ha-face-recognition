@@ -115,6 +115,14 @@ export default function PersonCard({
                         ✓ Face
                       </div>
                     )}
+                    {image.quality_warning && (
+                      <div
+                        className="absolute bottom-1 right-1 bg-yellow-600 text-white text-xs px-2 py-1 rounded"
+                        title={`Quality: ${image.quality_warning}`}
+                      >
+                        ⚠ {image.quality_warning}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

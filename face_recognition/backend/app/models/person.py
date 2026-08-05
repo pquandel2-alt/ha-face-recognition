@@ -35,6 +35,10 @@ class TrainingImage(Base):
     # bucket, when imported via the "Trainierte Gesichter" flow. Used to skip
     # re-importing the same image on a later Frigate-import run.
     frigate_source_filename = Column(String(500), nullable=True)
+    # Comma-separated list of quality issues found at upload/import time
+    # (e.g. "blurry,low_contrast"), or NULL if the image passed both checks.
+    # Informational only — the image is still saved and usable for training.
+    quality_warning = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships

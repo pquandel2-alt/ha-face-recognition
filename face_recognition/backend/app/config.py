@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     mqtt_password: Optional[str] = None
     mqtt_frigate_topic: str = "frigate/events"
     mqtt_result_topic: str = "home/face_recognition/person"
+    mqtt_availability_topic: str = "home/face_recognition/status"
     mqtt_ha_discovery_prefix: str = "homeassistant"
 
     # Frigate
@@ -43,6 +44,15 @@ class Settings(BaseSettings):
     insightface_providers: list = ["CPUExecutionProvider"]
     similarity_threshold_known: float = 0.50
     similarity_threshold_unknown: float = 0.35
+    # Below these, a training image is flagged as low-quality (still saved,
+    # just surfaced as a warning) — blurry/low-contrast source images are a
+    # common, otherwise silent cause of bad embeddings and wrong matches.
+    quality_blur_threshold: float = 80.0
+    quality_contrast_threshold: float = 20.0
+    # Similarity above which two Frigate person-event snapshots are grouped
+    # into the same on-the-fly cluster in the Frigate-import UI (no
+    # persistence — purely a request-time convenience for bulk selection).
+    cluster_similarity_threshold: float = 0.45
 
     # Database
     data_dir: Path = Path("/data")

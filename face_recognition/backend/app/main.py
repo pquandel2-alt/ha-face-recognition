@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from config import settings
 from database import init_db, get_db, SessionLocal
 from models.event import RecognitionEvent
-from routes import persons, training, recognition, frigate
+from routes import persons, training, recognition, frigate, stats
 from services.mqtt_service import MQTTService
 from services.frigate_service import FrigateService
 from services.ha_discovery import get_discovery_configs
@@ -40,6 +40,7 @@ app.include_router(persons.router, prefix="/api")
 app.include_router(training.router, prefix="/api")
 app.include_router(recognition.router, prefix="/api")
 app.include_router(frigate.router, prefix="/api")
+app.include_router(stats.router, prefix="/api")
 
 
 # Global MQTT service

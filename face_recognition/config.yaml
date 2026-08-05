@@ -1,5 +1,5 @@
 name: "Face Recognition"
-version: "1.0.15"
+version: "1.0.16"
 slug: "face_recognition"
 description: "Lokale Gesichtserkennung mit InsightFace/ArcFace, Frigate-Integration und MQTT Discovery — läuft komplett offline im LAN."
 url: "https://github.com/pquandel2-alt/ha-face-recognition"
@@ -16,12 +16,16 @@ options:
   mqtt_port: 1883
   mqtt_frigate_topic: "frigate/events"
   mqtt_result_topic: "home/face_recognition/person"
+  mqtt_availability_topic: "home/face_recognition/status"
   mqtt_ha_discovery_prefix: "homeassistant"
   frigate_api_url: "http://homeassistant.local:5000"
   insightface_model: "buffalo_sc"
   similarity_threshold_known: 0.50
   similarity_threshold_unknown: 0.35
   frigate_update_check_interval_seconds: 2
+  quality_blur_threshold: 80.0
+  quality_contrast_threshold: 20.0
+  cluster_similarity_threshold: 0.45
   log_level: "INFO"
 schema:
   mqtt_host: "str"
@@ -30,10 +34,14 @@ schema:
   mqtt_password: "password?"
   mqtt_frigate_topic: "str"
   mqtt_result_topic: "str"
+  mqtt_availability_topic: "str"
   mqtt_ha_discovery_prefix: "str"
   frigate_api_url: "url"
   insightface_model: "list(buffalo_sc|buffalo_s|buffalo_m|buffalo_l)"
   similarity_threshold_known: "float(0,1)"
   similarity_threshold_unknown: "float(0,1)"
   frigate_update_check_interval_seconds: "int(1,10)"
+  quality_blur_threshold: "float(0,1000)"
+  quality_contrast_threshold: "float(0,255)"
+  cluster_similarity_threshold: "float(0,1)"
   log_level: "list(DEBUG|INFO|WARNING|ERROR)"

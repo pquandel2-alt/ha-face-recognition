@@ -11,6 +11,19 @@ def get_discovery_configs() -> dict:
     Returns dict of entity_id -> config.
     """
     base_topic = settings.mqtt_result_topic
+    device = {
+        "name": "Face Recognition",
+        "identifiers": ["face_recognition"],
+        "manufacturer": "Home Assistant",
+    }
+    # Shared availability so all three sensors show "unavailable" in HA
+    # instead of a stale last-known value if the add-on crashes or loses
+    # its MQTT connection (see MQTTService.will_set in mqtt_service.py).
+    availability = {
+        "availability_topic": settings.mqtt_availability_topic,
+        "payload_available": "online",
+        "payload_not_available": "offline",
+    }
 
     configs = {
         "face_last_person": {
@@ -21,11 +34,8 @@ def get_discovery_configs() -> dict:
             "json_attributes_topic": f"{base_topic}",
             "json_attributes_template": "{{ value_json | tojson }}",
             "icon": "mdi:face-recognition",
-            "device": {
-                "name": "Face Recognition",
-                "identifiers": ["face_recognition"],
-                "manufacturer": "Home Assistant",
-            },
+            "device": device,
+            **availability,
         },
         "face_confidence": {
             "name": "Face Confidence",
@@ -36,11 +46,8 @@ def get_discovery_configs() -> dict:
             "json_attributes_topic": f"{base_topic}",
             "device_class": "severity",
             "icon": "mdi:percent",
-            "device": {
-                "name": "Face Recognition",
-                "identifiers": ["face_recognition"],
-                "manufacturer": "Home Assistant",
-            },
+            "device": device,
+            **availability,
         },
         "face_camera": {
             "name": "Face Camera",
@@ -48,11 +55,8 @@ def get_discovery_configs() -> dict:
             "state_topic": f"{base_topic}",
             "value_template": "{{ value_json.camera }}",
             "icon": "mdi:camera",
-            "device": {
-                "name": "Face Recognition",
-                "identifiers": ["face_recognition"],
-                "manufacturer": "Home Assistant",
-            },
+            "device": device,
+            **availability,
         },
     }
 

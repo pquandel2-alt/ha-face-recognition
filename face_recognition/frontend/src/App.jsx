@@ -4,6 +4,7 @@ import PersonsPage from './pages/PersonsPage'
 import TrainingPage from './pages/TrainingPage'
 import EventsPage from './pages/EventsPage'
 import FrigateImportPage from './pages/FrigateImportPage'
+import StatsPage from './pages/StatsPage'
 
 const queryClient = new QueryClient()
 
@@ -41,6 +42,12 @@ function App() {
                 >
                   Frigate Import
                 </Link>
+                <Link
+                  to="/stats"
+                  className="text-blue-400 hover:text-blue-300 font-medium"
+                >
+                  Stats
+                </Link>
               </nav>
             </div>
           </header>
@@ -52,6 +59,7 @@ function App() {
               <Route path="/training" element={<TrainingPage />} />
               <Route path="/events" element={<EventsPage />} />
               <Route path="/frigate" element={<FrigateImportPage />} />
+              <Route path="/stats" element={<StatsPage />} />
             </Routes>
           </main>
         </div>

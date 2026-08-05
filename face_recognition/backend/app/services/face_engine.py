@@ -90,6 +90,32 @@ class FaceEngine:
             logger.error(f"Error detecting faces from bytes: {e}")
             return []
 
+    def assess_quality(self, image_bytes: bytes) -> Optional[str]:
+        """
+        Cheap heuristic check for common, otherwise-silent causes of bad
+        training embeddings: blur (Laplacian variance) and low contrast
+        (grayscale stddev). Returns a comma-separated warning string, or
+        None if the image passes both checks. Never blocks saving/training —
+        purely informational for the user.
+        """
+        try:
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if img is None:
+                return None
+
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            issues = []
+            if cv2.Laplacian(gray, cv2.CV_64F).var() < settings.quality_blur_threshold:
+                issues.append("blurry")
+            if gray.std() < settings.quality_contrast_threshold:
+                issues.append("low_contrast")
+
+            return ",".join(issues) if issues else None
+        except Exception as e:
+            logger.warning(f"Error assessing image quality: {e}")
+            return None
+
     def similarity(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
         """Cosine similarity between two embeddings."""
         norm1 = np.linalg.norm(embedding1)

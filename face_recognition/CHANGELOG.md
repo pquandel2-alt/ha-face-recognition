@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.0.16
+
+- Fix (stiller Fehlerfall bei MQTT-Verbindungsabbruch): `ha_discovery.py` setzt jetzt
+  `availability_topic`/`payload_available`/`payload_not_available` für alle drei Sensoren.
+  `mqtt_service.py` registriert ein Last-Will (`will_set`) beim Verbinden und publiziert
+  explizit "online"/"offline" bei Connect/Disconnect. Stürzt der Container ab oder bricht die
+  MQTT-Verbindung unsauber ab, zeigt Home Assistant die Sensoren jetzt als "nicht verfügbar"
+  statt stumm den letzten erkannten Namen stehen zu lassen.
+- Feature: Icon (`icon.png`, 128×128) und Logo (`logo.png`, 256×256) fürs Add-on-Store-Card
+  ergänzt.
+- Feature (Bildqualitäts-Check vor Training): Neue Heuristik `FaceEngine.assess_quality`
+  (Unschärfe via Laplacian-Varianz, Kontrast via Graustufen-Standardabweichung, Schwellwerte
+  konfigurierbar über `quality_blur_threshold`/`quality_contrast_threshold`). Läuft beim
+  Bild-Upload und bei beiden Frigate-Import-Wegen; Ergebnis landet in der neuen Spalte
+  `TrainingImage.quality_warning` (Migration in `database.py`) und wird in der Personen-Ansicht
+  als Warn-Badge angezeigt. Blockiert nichts — rein informativ.
+- Feature (Batch-Training): Neuer Endpoint `POST /api/training/batch` trainiert alle Personen
+  mit mindestens einem Trainingsbild in einem Aufruf; "Train All"-Button auf der
+  Training-Seite.
+- Feature (Statistik-Dashboard): Neue Seite „Stats" mit Gesamtzahlen (Events, Ø-Konfidenz,
+  trainierte/Gesamt-Personen), Aufschlüsselung nach Person und Kamera sowie Verlauf der letzten
+  14 Tage. Neuer Endpoint `GET /api/stats`, ohne zusätzliche Frontend-Abhängigkeit (reine
+  CSS-Balken statt Chart-Library).
+- Feature (Gesichts-Clustering beim Frigate-Import): Neuer Endpoint
+  `GET /api/frigate/snapshots/clusters` gruppiert die Personen-Ereignis-Vorschau anhand von
+  Gesichtsähnlichkeit (Schwellwert konfigurierbar über `cluster_similarity_threshold`) —
+  rein zur Laufzeit berechnet, nichts wird dauerhaft gespeichert (Frigate behält die
+  zugrundeliegenden Schnappschüsse ohnehin unabhängig von diesem Add-on). Im Reiter
+  „Personen-Ereignisse" per Checkbox „Gruppieren" aktivierbar; pro Gruppe lässt sich die
+  komplette Auswahl mit einem Klick markieren statt jedes Bild einzeln anzuklicken.
+
 ## 1.0.15
 
 - Fix (Nutzer-Anforderung: Erkennung muss in Echtzeit UND zuverlässig sein UND darf niemals

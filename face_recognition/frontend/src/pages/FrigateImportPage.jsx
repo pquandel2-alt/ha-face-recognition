@@ -204,10 +204,18 @@ function EventSnapshotsTab() {
   const queryClient = useQueryClient()
   const [selectedPersonId, setSelectedPersonId] = useState(null)
   const [selectedEventIds, setSelectedEventIds] = useState([])
+  const [grouped, setGrouped] = useState(false)
 
   const { data: snapshots = [], isLoading: loadingSnapshots } = useQuery({
     queryKey: ['frigate_snapshots'],
     queryFn: () => frigateAPI.listSnapshots(50).then((r) => r.data),
+    enabled: !grouped,
+  })
+
+  const { data: clusterData, isLoading: loadingClusters } = useQuery({
+    queryKey: ['frigate_snapshot_clusters'],
+    queryFn: () => frigateAPI.clusterSnapshots(50).then((r) => r.data),
+    enabled: grouped,
   })
 
   const { data: persons = [] } = useQuery({
@@ -223,6 +231,7 @@ function EventSnapshotsTab() {
       // Backend excludes already-imported events from this list, so
       // refetching removes what was just imported from the gallery.
       queryClient.invalidateQueries({ queryKey: ['frigate_snapshots'] })
+      queryClient.invalidateQueries({ queryKey: ['frigate_snapshot_clusters'] })
       setSelectedEventIds([])
     },
   })
@@ -233,6 +242,15 @@ function EventSnapshotsTab() {
     )
   }
 
+  const handleToggleCluster = (events) => {
+    const ids = events.map((e) => e.id)
+    setSelectedEventIds((prev) => {
+      const allSelected = ids.every((id) => prev.includes(id))
+      if (allSelected) return prev.filter((id) => !ids.includes(id))
+      return [...new Set([...prev, ...ids])]
+    })
+  }
+
   const handleImport = async () => {
     if (!selectedPersonId || selectedEventIds.length === 0) return
     for (const eventId of selectedEventIds) {
@@ -240,11 +258,46 @@ function EventSnapshotsTab() {
     }
   }
 
+  const renderEventThumb = (event) => (
+    <label
+      key={event.id}
+      className={`relative rounded-lg overflow-hidden cursor-pointer transition ${
+        selectedEventIds.includes(event.id) ? 'ring-2 ring-blue-500' : 'ring-1 ring-gray-600'
+      }`}
+    >
+      <AuthImage url={`/frigate/thumbnail/${event.id}`} className="w-full h-40 object-cover" />
+
+      <div className="absolute inset-0 bg-black bg-opacity-30 hover:bg-opacity-40 transition flex items-center justify-center">
+        <input
+          type="checkbox"
+          checked={selectedEventIds.includes(event.id)}
+          onChange={() => handleToggleEvent(event.id)}
+          className="w-6 h-6"
+        />
+      </div>
+
+      <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 px-2 py-1 text-xs">
+        <p className="text-gray-200">{event.camera}</p>
+        <p className="text-gray-400">{new Date(event.start * 1000).toLocaleTimeString()}</p>
+      </div>
+    </label>
+  )
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
       <div className="lg:col-span-1">
         <div className="bg-gray-800 p-6 rounded-lg sticky top-8">
-          <h3 className="font-bold mb-4">Zielperson</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold">Zielperson</h3>
+            <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={grouped}
+                onChange={(e) => setGrouped(e.target.checked)}
+              />
+              Gruppieren
+            </label>
+          </div>
           <div className="space-y-2">
             {persons.map((person) => (
               <button
@@ -276,43 +329,63 @@ function EventSnapshotsTab() {
       </div>
 
       <div className="lg:col-span-3">
-        {loadingSnapshots ? (
-          <div className="text-center py-8">Lade Ereignisse...</div>
-        ) : snapshots.events && snapshots.events.length > 0 ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            {snapshots.events.map((event) => (
-              <label
-                key={event.id}
-                className={`relative rounded-lg overflow-hidden cursor-pointer transition ${
-                  selectedEventIds.includes(event.id)
-                    ? 'ring-2 ring-blue-500'
-                    : 'ring-1 ring-gray-600'
-                }`}
-              >
-                <AuthImage
-                  url={`/frigate/thumbnail/${event.id}`}
-                  className="w-full h-40 object-cover"
-                />
-
-                <div className="absolute inset-0 bg-black bg-opacity-30 hover:bg-opacity-40 transition flex items-center justify-center">
-                  <input
-                    type="checkbox"
-                    checked={selectedEventIds.includes(event.id)}
-                    onChange={() => handleToggleEvent(event.id)}
-                    className="w-6 h-6"
-                  />
-                </div>
-
-                <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 px-2 py-1 text-xs">
-                  <p className="text-gray-200">{event.camera}</p>
-                  <p className="text-gray-400">{new Date(event.start * 1000).toLocaleTimeString()}</p>
-                </div>
-              </label>
-            ))}
+        {!grouped ? (
+          loadingSnapshots ? (
+            <div className="text-center py-8">Lade Ereignisse...</div>
+          ) : snapshots.events && snapshots.events.length > 0 ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {snapshots.events.map((event) => renderEventThumb(event))}
+            </div>
+          ) : (
+            <div className="text-center text-gray-400 py-12">
+              Keine aktuellen Personen-Ereignisse in Frigate gefunden
+            </div>
+          )
+        ) : loadingClusters ? (
+          <div className="text-center py-8">
+            Analysiere Ähnlichkeiten... (kann bei vielen Ereignissen etwas dauern)
           </div>
-        ) : (
+        ) : (clusterData?.clusters?.length || 0) === 0 &&
+          (clusterData?.unclustered?.length || 0) === 0 ? (
           <div className="text-center text-gray-400 py-12">
             Keine aktuellen Personen-Ereignisse in Frigate gefunden
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {clusterData.clusters.map((cluster) => (
+              <div key={cluster.cluster_id}>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-medium text-gray-200">
+                    Gruppe {cluster.cluster_id + 1}{' '}
+                    <span className="text-gray-400 font-normal">
+                      ({cluster.count} ähnliche Bilder)
+                    </span>
+                  </h4>
+                  <button
+                    onClick={() => handleToggleCluster(cluster.events)}
+                    className="text-sm text-blue-400 hover:text-blue-300"
+                  >
+                    {cluster.events.every((e) => selectedEventIds.includes(e.id))
+                      ? 'Gruppe abwählen'
+                      : 'Gruppe auswählen'}
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {cluster.events.map((event) => renderEventThumb(event))}
+                </div>
+              </div>
+            ))}
+
+            {clusterData.unclustered.length > 0 && (
+              <div>
+                <h4 className="font-medium text-gray-400 mb-3">
+                  Ohne eindeutige Gruppe ({clusterData.unclustered.length})
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {clusterData.unclustered.map((event) => renderEventThumb(event))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

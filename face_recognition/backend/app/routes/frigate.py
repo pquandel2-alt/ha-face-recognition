@@ -79,6 +79,80 @@ def list_snapshots(
     }
 
 
+@router.get("/snapshots/clusters")
+def cluster_snapshots(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    frigate: FrigateService = Depends(get_frigate_service),
+):
+    """
+    Group recent person-event snapshots by face similarity, computed
+    on the fly (nothing is persisted) so the import UI can offer bulk
+    selection of visually similar events instead of a flat picklist.
+    Frigate already retains these snapshots regardless of this add-on, so
+    this doesn't introduce any new storage of biometric data.
+    """
+    events = frigate.get_recent_events(label="person", limit=limit)
+    if not events:
+        return {"clusters": [], "unclustered": []}
+
+    already_imported = {
+        row[0]
+        for row in db.query(TrainingImage.frigate_event_id).filter(
+            TrainingImage.frigate_event_id.isnot(None)
+        )
+    }
+    events = [e for e in events if e.get("id") not in already_imported]
+
+    engine = get_face_engine()
+    centroids: list = []
+    groups: list = []
+    unclustered = []
+
+    for e in events:
+        event_id = e.get("id")
+        summary = {
+            "id": event_id,
+            "camera": e.get("camera"),
+            "start": e.get("start_time"),
+            "end": e.get("end_time"),
+            "label": e.get("label"),
+        }
+
+        snapshot_bytes = frigate.get_snapshot(event_id, crop=True)
+        embeddings = engine.detect_and_embed_bytes(snapshot_bytes) if snapshot_bytes else []
+        if not embeddings:
+            unclustered.append(summary)
+            continue
+
+        embedding = embeddings[0]
+        best_idx, best_sim = None, 0.0
+        for idx, centroid in enumerate(centroids):
+            sim = engine.similarity(embedding, centroid)
+            if sim > best_sim:
+                best_sim = sim
+                best_idx = idx
+
+        if best_idx is not None and best_sim >= settings.cluster_similarity_threshold:
+            groups[best_idx].append(summary)
+            n = len(groups[best_idx])
+            centroids[best_idx] = (centroids[best_idx] * (n - 1) + embedding) / n
+        else:
+            centroids.append(embedding)
+            groups.append([summary])
+
+    clusters = []
+    for group in groups:
+        if len(group) > 1:
+            clusters.append({"cluster_id": len(clusters), "count": len(group), "events": group})
+        else:
+            unclustered.extend(group)
+
+    clusters.sort(key=lambda c: c["count"], reverse=True)
+
+    return {"clusters": clusters, "unclustered": unclustered}
+
+
 @router.get("/thumbnail/{event_id}")
 def get_thumbnail(
     event_id: str,
@@ -205,6 +279,7 @@ def import_trained_faces(
                 f.write(image_bytes)
 
             embeddings = engine.detect_and_embed_bytes(image_bytes)
+            quality_warning = engine.assess_quality(image_bytes)
 
             training_image = TrainingImage(
                 person_id=body.person_id,
@@ -212,6 +287,7 @@ def import_trained_faces(
                 face_detected=bool(embeddings),
                 source="frigate_import",
                 frigate_source_filename=source_key,
+                quality_warning=quality_warning,
             )
             db.add(training_image)
             db.commit()
@@ -276,6 +352,7 @@ def import_snapshot_as_training_image(
         # Detect face and verify it exists
         engine = get_face_engine()
         embeddings = engine.detect_and_embed_bytes(snapshot_bytes)
+        quality_warning = engine.assess_quality(snapshot_bytes)
 
         # Create training image record
         training_image = TrainingImage(
@@ -284,6 +361,7 @@ def import_snapshot_as_training_image(
             face_detected=bool(embeddings),
             source="frigate_import",
             frigate_event_id=event_id,
+            quality_warning=quality_warning,
         )
         db.add(training_image)
         db.commit()
@@ -301,6 +379,7 @@ def import_snapshot_as_training_image(
             "source": "frigate_import",
             "face_detected": bool(embeddings),
             "faces_count": len(embeddings),
+            "quality_warning": quality_warning,
             "created_at": training_image.created_at.isoformat(),
         }
     except HTTPException:

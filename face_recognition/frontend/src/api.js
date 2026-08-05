@@ -29,6 +29,7 @@ export const personsAPI = {
 // Training API
 export const trainingAPI = {
   train: (personId) => api.post(`/training/${personId}`),
+  trainBatch: () => api.post('/training/batch'),
   getStatus: () => api.get('/training/status'),
   getPersonStatus: (personId) => api.get(`/training/${personId}/status`),
 }
@@ -55,6 +56,12 @@ export const frigateAPI = {
   listTrainedFaces: () => api.get('/frigate/faces'),
   importTrainedFaces: (name, filenames, personId) =>
     api.post('/frigate/faces/import', { name, filenames, person_id: personId }),
+  clusterSnapshots: (limit = 50) => api.get('/frigate/snapshots/clusters', { params: { limit } }),
+}
+
+// Stats API
+export const statsAPI = {
+  get: () => api.get('/stats'),
 }
 
 // Health

@@ -1,6 +1,7 @@
 import logging
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -21,6 +22,51 @@ def get_face_engine() -> FaceEngine:
     if face_engine is None:
         face_engine = FaceEngine()
     return face_engine
+
+
+@router.post("/batch")
+def train_batch(
+    person_ids: Optional[List[int]] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Train/retrain multiple persons in one call. Without person_ids, trains
+    every person that has at least one training image.
+
+    Registered before /{person_id} so "batch" isn't swallowed as a
+    person_id path segment (FastAPI matches routes in registration order).
+    """
+    query = db.query(Person)
+    if person_ids:
+        query = query.filter(Person.id.in_(person_ids))
+    persons = [p for p in query.all() if p.training_images]
+
+    if not persons:
+        raise HTTPException(status_code=400, detail="No persons with training images to train")
+
+    engine = get_face_engine()
+    results = []
+    for person in persons:
+        try:
+            success = engine.compute_person_embedding(person.id, db)
+        except Exception as e:
+            logger.error(f"Batch training error for {person.name}: {e}")
+            success = False
+        results.append(
+            {
+                "person_id": person.id,
+                "person_name": person.name,
+                "status": "trained" if success else "failed",
+            }
+        )
+
+    trained_count = sum(1 for r in results if r["status"] == "trained")
+    logger.info(f"Batch training: {trained_count}/{len(results)} persons trained")
+    return {
+        "trained": trained_count,
+        "failed": len(results) - trained_count,
+        "results": results,
+    }
 
 
 @router.post("/{person_id}")
