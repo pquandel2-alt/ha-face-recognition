@@ -1,5 +1,5 @@
 name: "Face Recognition"
-version: "1.0.17"
+version: "1.0.18"
 slug: "face_recognition"
 description: "Lokale Gesichtserkennung mit InsightFace/ArcFace, Frigate-Integration und MQTT Discovery — läuft komplett offline im LAN."
 url: "https://github.com/pquandel2-alt/ha-face-recognition"
@@ -22,7 +22,7 @@ options:
   insightface_model: "buffalo_sc"
   similarity_threshold_known: 0.50
   similarity_threshold_unknown: 0.35
-  frigate_update_check_interval_seconds: 2
+  frigate_update_check_interval_seconds: 1
   frigate_snapshot_retention_hours: 24
   quality_blur_threshold: 80.0
   quality_contrast_threshold: 20.0

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -105,7 +106,7 @@ def _save_event_snapshot(event_id: str, image_bytes: bytes | None) -> str | None
 
 
 def _analyze_crops_for_consensus(
-    crops: list[bytes], db: Session
+    crops: list[bytes],
 ) -> tuple[str | None, float, float, bytes | None]:
     """
     Analyze all of Frigate's face-detector crops for an in-progress or
@@ -116,21 +117,40 @@ def _analyze_crops_for_consensus(
     Returns (person_name, confidence, margin, representative_crop_bytes).
     person_name is None if no trustworthy consensus was reached yet.
     """
+    if not crops:
+        return None, 0.0, 0.0, None
+
     from routes.training import get_face_engine
 
     engine = get_face_engine()
-    per_crop = []  # (name, confidence, margin, crop_bytes)
-    for crop_bytes in crops:
-        result = engine.analyze_image(crop_bytes, db)
-        for face_result in result["results"]:
-            per_crop.append(
-                (
-                    face_result["name"],
-                    face_result["confidence"],
-                    face_result.get("margin", 0.0),
-                    crop_bytes,
-                )
+
+    def analyze_one(crop_bytes: bytes) -> list[tuple[str, float, float, bytes]]:
+        # Each worker gets its own short-lived session — SQLAlchemy
+        # sessions aren't safe to share across concurrently running threads.
+        crop_db = SessionLocal()
+        try:
+            result = engine.analyze_image(crop_bytes, crop_db)
+        finally:
+            crop_db.close()
+        return [
+            (
+                face_result["name"],
+                face_result["confidence"],
+                face_result.get("margin", 0.0),
+                crop_bytes,
             )
+            for face_result in result["results"]
+        ]
+
+    # Analyze crops concurrently — this runs on every throttled "update"
+    # poll while a person is still in frame, so keeping it fast matters for
+    # real-time recognition. InsightFace inference is CPU-bound but releases
+    # the GIL during the heavy numpy/onnxruntime work, so this can run truly
+    # in parallel on multi-core hosts (harmless, just less of a win on
+    # single-core hardware).
+    with ThreadPoolExecutor(max_workers=min(len(crops), 4)) as executor:
+        per_crop_lists = list(executor.map(analyze_one, crops))
+    per_crop = [item for sublist in per_crop_lists for item in sublist]
 
     if not per_crop:
         return None, 0.0, 0.0, None
@@ -342,7 +362,7 @@ def on_frigate_event_update(event_id: str | None, camera: str):
         if not crops:
             return  # Frigate hasn't produced a face crop for this event yet.
 
-        winner_name, winner_confidence, _margin, rep_crop = _analyze_crops_for_consensus(crops, db)
+        winner_name, winner_confidence, _margin, rep_crop = _analyze_crops_for_consensus(crops)
 
         if winner_name is None:
             return  # Not confident/agreed yet — try again on the next throttled update.
@@ -428,7 +448,7 @@ def on_frigate_event_end(event_id: str | None):
         crops = frigate.get_train_face_crops(event_id)
         best_name, best_confidence, snapshot_path = None, -1.0, None
         if crops:
-            best_name, best_confidence, _margin, rep_crop = _analyze_crops_for_consensus(crops, db)
+            best_name, best_confidence, _margin, rep_crop = _analyze_crops_for_consensus(crops)
             if best_name is not None:
                 snapshot_path = _save_event_snapshot(event_id, rep_crop)
             else:

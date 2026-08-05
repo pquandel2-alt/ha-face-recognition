@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.18
+
+- Feature (schnellere Echtzeit-Erkennung während der Anwesenheit): Die in v1.0.17 eingeführte
+  Update-Poll-Logik (Erkennung schon während die Person noch vor der Kamera steht, nicht erst
+  beim Verlassen) läuft jetzt deutlich schneller pro Zyklus, ohne die Zuverlässigkeits-Logik
+  (Multi-Crop-Konsens, Sicherheitsabstand) zu verändern:
+  - `FrigateService` nutzt jetzt eine wiederverwendete `requests.Session()` statt für jeden
+    Aufruf eine neue Verbindung zum Frigate-Host aufzubauen.
+  - `get_train_face_crops` holt die mehreren Gesichts-Crops eines Events jetzt parallel statt
+    nacheinander.
+  - `_analyze_crops_for_consensus` analysiert diese Crops ebenfalls parallel (jeder Worker mit
+    eigener kurzlebiger DB-Session, da SQLAlchemy-Sessions nicht zwischen Threads geteilt werden
+    dürfen).
+  - Das Poll-Intervall während einer aktiven Anwesenheit
+    (`frigate_update_check_interval_seconds`) wurde von 2s auf 1s gesenkt, da die Pipeline durch
+    die obigen Änderungen genug Luft dafür hat.
+
 ## 1.0.17
 
 - Feature (Einzel-Embeddings + k-NN-Matching statt Mittelwert pro Person): Jedes

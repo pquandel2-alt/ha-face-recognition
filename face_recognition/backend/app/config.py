@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     # Throttle for checking Frigate's train-face-crop bucket during an active
     # track (via "update" MQTT events) — avoids hitting the Frigate API on
     # every one of the frequent update ticks.
-    frigate_update_check_interval_seconds: int = 2
+    frigate_update_check_interval_seconds: int = 1
 
     # Face Recognition
     insightface_model: str = "buffalo_sc"
