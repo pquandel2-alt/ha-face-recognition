@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.15
+
+- Fix (Nutzer-Anforderung: Erkennung muss in Echtzeit UND zuverlässig sein UND darf niemals
+  zweimal für dieselbe Anwesenheit melden — bisher konnte die schnelle, unsichere
+  "new"-Erkennung und die spätere, zuverlässige "end"-Verfeinerung beide unabhängig
+  publizieren, wodurch z. B. eine Begrüßungs-Automatisierung zweimal auslöste): `main.py`
+  behandelt jetzt zusätzlich Frigates häufige `"update"`-Events (bisher verworfen), die
+  während des laufenden Trackings gesendet werden. Neue Funktion `on_frigate_event_update`
+  prüft darüber (gedrosselt, Default alle 2 s, konfigurierbar über
+  `frigate_update_check_interval_seconds`) Frigates `/api/faces`-train-Bucket auf bereits
+  verfügbare Gesichts-Crops — die dieselbe Qualität wie am `"end"`-Event liefern, aber oft
+  schon Sekunden nach Bildeintritt vorliegen, statt erst wenn die Person das Bild wieder
+  verlässt. `RecognitionEvent` bekommt eine neue Spalte `notified` (Migration in
+  `database.py`): Sobald einmal publiziert wurde, publizieren `"new"`, `"update"` und `"end"`
+  für dasselbe Frigate-Event nie wieder erneut — spätere Verfeinerungen werden weiterhin in
+  der Datenbank festgehalten (korrekte Historie), aber nicht mehr an MQTT/HA gemeldet. Am
+  `"new"`-Event wird außerdem nur noch publiziert, wenn das Ergebnis bereits über der
+  Known-Schwelle liegt, statt jeder (auch unsicheren) Ersterkennung.
+
 ## 1.0.14
 
 - Feature (Nutzer-Wunsch: Oberfläche soll sich in Home Assistant selbst öffnen statt in einem

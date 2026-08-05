@@ -47,6 +47,12 @@ mqtt_service: MQTTService | None = None
 active_websockets: list[WebSocket] = []
 main_loop: asyncio.AbstractEventLoop | None = None
 
+# Throttle state for on_frigate_event_update: last time we hit the Frigate
+# API for each in-progress event_id. Only ever touched from the MQTT
+# client's single background thread (paho-mqtt's loop_forever), so no lock
+# is needed — consistent with the rest of this module.
+_last_update_check: dict[str, datetime] = {}
+
 
 def schedule_broadcast(data: dict) -> None:
     """
@@ -121,7 +127,13 @@ def on_frigate_event(payload: dict):
             on_frigate_event_end(event_id)
             return
 
-        # Only process new person detections (not updates which happen frequently)
+        # "update" events fire frequently while a track is still active —
+        # used to catch a confident result as soon as Frigate's face-detector
+        # crops become available, without waiting for the track to end.
+        if event_type == "update":
+            on_frigate_event_update(event_id, camera)
+            return
+
         if event_type != "new":
             return
 
@@ -155,6 +167,13 @@ def on_frigate_event(payload: dict):
             person_name = best_result["name"]
             confidence = best_result["confidence"]
 
+            # Only publish when the whole-person crop already gives a
+            # confident match — an "unknown"/"uncertain" guess here would be
+            # a premature, unreliable notification. If it isn't confident
+            # yet, on_frigate_event_update / on_frigate_event_end still get
+            # a chance to notify once a better result is available.
+            is_confident = person_name not in ("unknown", "uncertain")
+
             # Save event
             timestamp = datetime.utcnow()
             event = RecognitionEvent(
@@ -162,18 +181,21 @@ def on_frigate_event(payload: dict):
                 person_name=person_name,
                 confidence=confidence,
                 frigate_event_id=event_id,
+                notified=is_confident,
                 timestamp=timestamp,
             )
             db.add(event)
             db.commit()
             logger.debug(f"Saved recognition event: {person_name} on {camera}")
 
-            # Publish via MQTT
-            if mqtt_service and mqtt_service.connected:
-                mqtt_service.publish_recognition(person_name, confidence, camera, timestamp.isoformat())
-                logger.debug(f"Published MQTT event: {person_name}")
-            else:
-                logger.warning("MQTT not connected, event not published")
+            # Publish via MQTT — at most once per Frigate event, so a later
+            # phase (update/end) never double-fires a downstream automation.
+            if is_confident:
+                if mqtt_service and mqtt_service.connected:
+                    mqtt_service.publish_recognition(person_name, confidence, camera, timestamp.isoformat())
+                    logger.debug(f"Published MQTT event: {person_name}")
+                else:
+                    logger.warning("MQTT not connected, event not published")
 
             # Notify WebSocket clients
             schedule_broadcast(
@@ -194,6 +216,95 @@ def on_frigate_event(payload: dict):
 
     except Exception as e:
         logger.error(f"Error in on_frigate_event: {e}", exc_info=True)
+
+
+def on_frigate_event_update(event_id: str | None, camera: str):
+    """
+    Frigate emits frequent "update" events while a track is still active,
+    and progressively populates the /api/faces "train" bucket with
+    dedicated face-detector crops during that same window — not only once
+    the track ends. Poll for those crops here (throttled per event_id) so a
+    confident, reliable result can be published within a second or two of
+    the person appearing, instead of only at "end" when they leave the
+    frame. No-ops once the event has already been notified.
+    """
+    if not event_id:
+        return
+
+    now = datetime.utcnow()
+    last_check = _last_update_check.get(event_id)
+    if last_check and (now - last_check).total_seconds() < settings.frigate_update_check_interval_seconds:
+        return
+    _last_update_check[event_id] = now
+
+    db = SessionLocal()
+    try:
+        event = (
+            db.query(RecognitionEvent)
+            .filter(RecognitionEvent.frigate_event_id == event_id)
+            .first()
+        )
+        if event is not None and event.notified:
+            return  # Already published for this event — nothing left to do faster.
+
+        frigate = FrigateService()
+        crops = frigate.get_train_face_crops(event_id)
+        if not crops:
+            return  # Frigate hasn't produced a face crop for this event yet.
+
+        from routes.training import get_face_engine
+
+        engine = get_face_engine()
+        best_name, best_confidence = None, -1.0
+        for crop_bytes in crops:
+            result = engine.analyze_image(crop_bytes, db)
+            for face_result in result["results"]:
+                if face_result["confidence"] > best_confidence:
+                    best_confidence = face_result["confidence"]
+                    best_name = face_result["name"]
+
+        if best_name in (None, "unknown", "uncertain"):
+            return  # Not confident yet — try again on the next throttled update.
+
+        if event is None:
+            event = RecognitionEvent(
+                camera=camera,
+                person_name=best_name,
+                confidence=best_confidence,
+                frigate_event_id=event_id,
+                timestamp=now,
+            )
+            db.add(event)
+        else:
+            event.person_name = best_name
+            event.confidence = best_confidence
+
+        event.notified = True
+        db.commit()
+
+        logger.info(
+            f"Real-time recognition via Frigate face crop (update event) for "
+            f"{event_id}: {event.person_name} ({event.confidence:.2f})"
+        )
+
+        if mqtt_service and mqtt_service.connected:
+            mqtt_service.publish_recognition(
+                event.person_name, event.confidence, event.camera, event.timestamp.isoformat()
+            )
+
+        schedule_broadcast(
+            {
+                "type": "recognition",
+                "person_name": event.person_name,
+                "confidence": event.confidence,
+                "camera": event.camera,
+                "timestamp": event.timestamp.isoformat(),
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error processing Frigate event update for {event_id}: {e}", exc_info=True)
+    finally:
+        db.close()
 
 
 def on_frigate_event_end(event_id: str | None):
@@ -223,6 +334,7 @@ def on_frigate_event_end(event_id: str | None):
             .filter(RecognitionEvent.frigate_event_id == event_id)
             .first()
         )
+        already_notified = bool(event and event.notified)
 
         crops = frigate.get_train_face_crops(event_id)
         best_name, best_confidence = None, -1.0
@@ -261,6 +373,13 @@ def on_frigate_event_end(event_id: str | None):
             event.frigate_sub_label = sub_label
             event.frigate_sub_label_score = sub_label_score
 
+        # At most one MQTT publish per Frigate event: if "new" or "update"
+        # already notified, only the DB record (history/accuracy) is
+        # updated here — never a second, correcting notification.
+        should_publish = refined and not already_notified
+        if should_publish:
+            event.notified = True
+
         db.commit()
         logger.debug(f"Processed Frigate event end for {event_id}")
 
@@ -269,10 +388,17 @@ def on_frigate_event_end(event_id: str | None):
                 f"Refined recognition for event {event_id} using Frigate face crops: "
                 f"{event.person_name} ({event.confidence:.2f})"
             )
-            if mqtt_service and mqtt_service.connected:
-                mqtt_service.publish_recognition(
-                    event.person_name, event.confidence, event.camera, event.timestamp.isoformat()
+            if should_publish:
+                if mqtt_service and mqtt_service.connected:
+                    mqtt_service.publish_recognition(
+                        event.person_name, event.confidence, event.camera, event.timestamp.isoformat()
+                    )
+            else:
+                logger.debug(
+                    f"Suppressed republish for event {event_id} — already notified earlier."
                 )
+
+        _last_update_check.pop(event_id, None)
 
         schedule_broadcast(
             {

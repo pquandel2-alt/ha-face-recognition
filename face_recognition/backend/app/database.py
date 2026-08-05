@@ -52,6 +52,7 @@ def _migrate_add_missing_columns():
         for column, ddl_type in (
             ("frigate_sub_label", "VARCHAR(255)"),
             ("frigate_sub_label_score", "FLOAT"),
+            ("notified", "BOOLEAN DEFAULT 0"),
         ):
             if column not in existing:
                 logger.info(f"Migrating: adding column {column} to recognition_events")

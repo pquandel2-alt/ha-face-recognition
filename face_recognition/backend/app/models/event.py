@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Float
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Float
 from sqlalchemy.orm import relationship
 
 from database import Base
@@ -18,6 +18,10 @@ class RecognitionEvent(Base):
     frigate_event_id = Column(String(255), nullable=True)
     frigate_sub_label = Column(String(255), nullable=True)
     frigate_sub_label_score = Column(Float, nullable=True)
+    # True once an MQTT message has been published for this Frigate event —
+    # ensures at most one notification per person-appearance regardless of
+    # how many recognition phases (new/update/end) run after it.
+    notified = Column(Boolean, default=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     # Relationships

@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     # Frigate
     frigate_api_url: str = "http://192.168.1.100:5000"
     frigate_snapshot_retention_hours: int = 24
+    # Throttle for checking Frigate's train-face-crop bucket during an active
+    # track (via "update" MQTT events) — avoids hitting the Frigate API on
+    # every one of the frequent update ticks.
+    frigate_update_check_interval_seconds: int = 2
 
     # Face Recognition
     insightface_model: str = "buffalo_sc"
