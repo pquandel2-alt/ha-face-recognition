@@ -43,6 +43,9 @@ class TrainingImage(Base):
 
     # Relationships
     person = relationship("Person", back_populates="training_images")
+    embeddings = relationship(
+        "Embedding", back_populates="training_image", cascade="all, delete-orphan"
+    )
 
 
 class Embedding(Base):
@@ -50,10 +53,18 @@ class Embedding(Base):
 
     id = Column(Integer, primary_key=True)
     person_id = Column(Integer, ForeignKey("persons.id"), nullable=False)
+    # One row per training image (per-image embeddings, not an averaged
+    # centroid) — enables k-NN matching in FaceEngine.find_best_match instead
+    # of comparing against a single mean vector per person. NULL only for
+    # legacy rows from before this column existed.
+    training_image_id = Column(Integer, ForeignKey("training_images.id"), nullable=True)
     vector_json = Column(Text, nullable=False)  # JSON serialized 512-dim vector
+    # Legacy field from the averaged-embedding model; always 1 for per-image
+    # rows. Kept to avoid a SQLite DROP COLUMN migration for a harmless field.
     image_count = Column(Integer, default=1)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     person = relationship("Person", back_populates="embeddings")
+    training_image = relationship("TrainingImage", back_populates="embeddings")

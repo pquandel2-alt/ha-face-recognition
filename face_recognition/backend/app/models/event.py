@@ -22,6 +22,10 @@ class RecognitionEvent(Base):
     # ensures at most one notification per person-appearance regardless of
     # how many recognition phases (new/update/end) run after it.
     notified = Column(Boolean, default=False)
+    # Set by the Events-page review workflow: "confirmed" (snapshot accepted
+    # as a new training image) or "rejected" (marked as a known false
+    # positive, never used as training data). NULL until reviewed.
+    verdict = Column(String(20), nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     # Relationships

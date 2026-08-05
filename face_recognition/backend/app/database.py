@@ -53,6 +53,7 @@ def _migrate_add_missing_columns():
             ("frigate_sub_label", "VARCHAR(255)"),
             ("frigate_sub_label_score", "FLOAT"),
             ("notified", "BOOLEAN DEFAULT 0"),
+            ("verdict", "VARCHAR(20)"),
         ):
             if column not in existing:
                 logger.info(f"Migrating: adding column {column} to recognition_events")
@@ -71,6 +72,18 @@ def _migrate_add_missing_columns():
                 logger.info(f"Migrating: adding column {column} to training_images")
                 conn.exec_driver_sql(
                     f"ALTER TABLE training_images ADD COLUMN {column} {ddl_type}"
+                )
+
+        existing_embedding_columns = {
+            row[1] for row in conn.exec_driver_sql("PRAGMA table_info(embeddings)")
+        }
+        for column, ddl_type in (
+            ("training_image_id", "INTEGER REFERENCES training_images(id)"),
+        ):
+            if column not in existing_embedding_columns:
+                logger.info(f"Migrating: adding column {column} to embeddings")
+                conn.exec_driver_sql(
+                    f"ALTER TABLE embeddings ADD COLUMN {column} {ddl_type}"
                 )
 
         conn.commit()

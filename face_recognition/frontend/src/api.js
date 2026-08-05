@@ -45,6 +45,10 @@ export const recognitionAPI = {
     })
   },
   getEvents: (limit = 50) => api.get('/recognition/events', { params: { limit } }),
+  eventImageUrl: (eventId) => `/recognition/events/${eventId}/image`,
+  confirmEvent: (eventId, personId) =>
+    api.post(`/recognition/events/${eventId}/confirm`, personId ? { person_id: personId } : {}),
+  rejectEvent: (eventId) => api.post(`/recognition/events/${eventId}/reject`),
 }
 
 // Frigate API

@@ -1,14 +1,34 @@
-import { useEffect } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { recognitionAPI } from '../api'
+import { useEffect, useState } from 'react'
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
+import { recognitionAPI, personsAPI } from '../api'
+import AuthImage from '../components/AuthImage'
 
 export default function EventsPage() {
   const queryClient = useQueryClient()
+  const [selections, setSelections] = useState({}) // { [eventId]: personId }
 
   const { data: events = [], isLoading } = useQuery({
     queryKey: ['recognition_events'],
     queryFn: () => recognitionAPI.getEvents(50).then((r) => r.data),
     refetchInterval: 5000,
+  })
+
+  const { data: persons = [] } = useQuery({
+    queryKey: ['persons'],
+    queryFn: () => personsAPI.list().then((r) => r.data),
+  })
+
+  const confirmMutation = useMutation({
+    mutationFn: ({ eventId, personId }) => recognitionAPI.confirmEvent(eventId, personId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['recognition_events'] })
+      queryClient.invalidateQueries({ queryKey: ['persons'] })
+    },
+  })
+
+  const rejectMutation = useMutation({
+    mutationFn: (eventId) => recognitionAPI.rejectEvent(eventId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['recognition_events'] }),
   })
 
   useEffect(() => {
@@ -50,6 +70,9 @@ export default function EventsPage() {
     return <div className="text-center py-8">Loading...</div>
   }
 
+  const selectedPersonId = (event) =>
+    selections[event.id] ?? (event.person_id != null ? String(event.person_id) : '')
+
   return (
     <div>
       <h2 className="text-3xl font-bold mb-6">Recognition Events</h2>
@@ -68,34 +91,43 @@ export default function EventsPage() {
                 disagrees ? 'ring-2 ring-orange-500' : ''
               }`}
             >
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-bold">
-                    <span
-                      className={
-                        event.person_name === 'unknown'
-                          ? 'text-red-400'
-                          : event.person_name === 'uncertain'
-                          ? 'text-yellow-400'
-                          : 'text-green-400'
-                      }
-                    >
-                      {event.person_name}
-                    </span>
-                  </h3>
-                  <p className="text-gray-400 text-sm">
-                    Camera: <span className="font-mono">{event.camera}</span>
-                  </p>
-                  {hasFrigateVerdict && (
-                    <p className={`text-sm mt-1 ${disagrees ? 'text-orange-400' : 'text-gray-400'}`}>
-                      Frigate sagt: <span className="font-semibold">{event.frigate_sub_label}</span>
-                      {event.frigate_sub_label_score != null &&
-                        ` (${(event.frigate_sub_label_score * 100).toFixed(1)}%)`}
-                      {disagrees && ' — Abweichung!'}
-                    </p>
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-4 flex-1 min-w-0">
+                  {event.has_image && (
+                    <AuthImage
+                      url={recognitionAPI.eventImageUrl(event.id)}
+                      className="w-16 h-16 rounded object-cover flex-shrink-0"
+                    />
                   )}
+                  <div className="min-w-0">
+                    <h3 className="text-lg font-bold">
+                      <span
+                        className={
+                          event.person_name === 'unknown'
+                            ? 'text-red-400'
+                            : event.person_name === 'uncertain'
+                            ? 'text-yellow-400'
+                            : 'text-green-400'
+                        }
+                      >
+                        {event.person_name}
+                      </span>
+                    </h3>
+                    <p className="text-gray-400 text-sm">
+                      Camera: <span className="font-mono">{event.camera}</span>
+                    </p>
+                    {hasFrigateVerdict && (
+                      <p className={`text-sm mt-1 ${disagrees ? 'text-orange-400' : 'text-gray-400'}`}>
+                        Frigate sagt: <span className="font-semibold">{event.frigate_sub_label}</span>
+                        {event.frigate_sub_label_score != null &&
+                          ` (${(event.frigate_sub_label_score * 100).toFixed(1)}%)`}
+                        {disagrees && ' — Abweichung!'}
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <div className="text-right">
+
+                <div className="text-right flex-shrink-0">
                   <div className="text-2xl font-bold text-blue-400">
                     {(event.confidence * 100).toFixed(1)}%
                   </div>
@@ -104,6 +136,54 @@ export default function EventsPage() {
                   </p>
                 </div>
               </div>
+
+              {event.has_image && (
+                <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-700">
+                  {event.verdict === 'confirmed' && (
+                    <span className="text-sm text-green-400">✓ Bestätigt — als Trainingsbild übernommen</span>
+                  )}
+                  {event.verdict === 'rejected' && (
+                    <span className="text-sm text-red-400">✗ Abgelehnt — falsche Erkennung</span>
+                  )}
+                  {!event.verdict && (
+                    <>
+                      <select
+                        className="bg-gray-700 text-sm rounded px-2 py-1"
+                        value={selectedPersonId(event)}
+                        onChange={(e) =>
+                          setSelections((prev) => ({ ...prev, [event.id]: e.target.value }))
+                        }
+                      >
+                        <option value="">-- Person wählen --</option>
+                        {persons.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className="text-sm bg-green-700 hover:bg-green-600 px-3 py-1 rounded disabled:opacity-50"
+                        disabled={!selectedPersonId(event) || confirmMutation.isPending}
+                        onClick={() =>
+                          confirmMutation.mutate({
+                            eventId: event.id,
+                            personId: Number(selectedPersonId(event)),
+                          })
+                        }
+                      >
+                        Trainieren
+                      </button>
+                      <button
+                        className="text-sm bg-red-700 hover:bg-red-600 px-3 py-1 rounded disabled:opacity-50"
+                        disabled={rejectMutation.isPending}
+                        onClick={() => rejectMutation.mutate(event.id)}
+                      >
+                        Falsch erkannt
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           )
         })}

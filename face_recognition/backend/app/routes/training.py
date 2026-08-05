@@ -2,6 +2,7 @@ import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -22,6 +23,24 @@ def get_face_engine() -> FaceEngine:
     if face_engine is None:
         face_engine = FaceEngine()
     return face_engine
+
+
+def _embedding_summary(person_id: int, db: Session) -> dict:
+    """
+    Aggregate a person's per-image Embedding rows (one row per training image
+    since the k-NN rewrite, not the single averaged row this used to be) into
+    the same shape the training-status endpoints have always returned.
+    """
+    count, trained_at = (
+        db.query(func.count(Embedding.id), func.max(Embedding.updated_at))
+        .filter_by(person_id=person_id)
+        .one()
+    )
+    return {
+        "has_embedding": count > 0,
+        "faces_in_images": count,
+        "trained_at": trained_at.isoformat() if trained_at else None,
+    }
 
 
 @router.post("/batch")
@@ -110,15 +129,12 @@ def training_status(db: Session = Depends(get_db)):
     status = []
 
     for person in persons:
-        embedding = db.query(Embedding).filter_by(person_id=person.id).first()
         status.append(
             {
                 "id": person.id,
                 "name": person.name,
                 "image_count": len(person.training_images),
-                "has_embedding": bool(embedding),
-                "faces_in_images": embedding.image_count if embedding else 0,
-                "trained_at": embedding.created_at.isoformat() if embedding else None,
+                **_embedding_summary(person.id, db),
             }
         )
 
@@ -132,13 +148,9 @@ def person_training_status(person_id: int, db: Session = Depends(get_db)):
     if not person:
         raise HTTPException(status_code=404, detail="Person not found")
 
-    embedding = db.query(Embedding).filter_by(person_id=person_id).first()
-
     return {
         "id": person.id,
         "name": person.name,
         "image_count": len(person.training_images),
-        "has_embedding": bool(embedding),
-        "faces_in_images": embedding.image_count if embedding else 0,
-        "trained_at": embedding.created_at.isoformat() if embedding else None,
+        **_embedding_summary(person_id, db),
     }

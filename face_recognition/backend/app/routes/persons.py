@@ -89,6 +89,7 @@ def delete_person(person_id: int, db: Session = Depends(get_db)):
 
     db.delete(person)
     db.commit()
+    get_face_engine().invalidate_cache()
 
     logger.info(f"Deleted person: {person.name}")
     return {"status": "deleted", "name": person.name}
@@ -185,6 +186,7 @@ def delete_training_image(person_id: int, image_id: int, db: Session = Depends(g
 
     db.delete(training_image)
     db.commit()
+    get_face_engine().invalidate_cache()
 
     logger.info(f"Deleted training image: {training_image.filename}")
     return {"status": "deleted"}

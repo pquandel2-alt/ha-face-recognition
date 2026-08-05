@@ -1,5 +1,6 @@
 import json
 import logging
+from collections import Counter
 from io import BytesIO
 from pathlib import Path
 from typing import Optional, Tuple, List
@@ -10,7 +11,7 @@ from insightface.app import FaceAnalysis
 from sqlalchemy.orm import Session
 
 from config import settings
-from models.person import Person, Embedding
+from models.person import Person, Embedding, TrainingImage
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,28 @@ class FaceEngine:
             logger.error(f"Failed to initialize FaceAnalysis: {e}")
             raise
 
+        # In-process cache of (person_name, vector) pairs for k-NN matching,
+        # lazily built from the embeddings table and invalidated after any
+        # training/delete operation. Avoids re-querying + re-parsing every
+        # per-image embedding on every single recognition call.
+        self._embedding_cache: Optional[List[Tuple[str, np.ndarray]]] = None
+
+    def invalidate_cache(self) -> None:
+        """Drop the embedding cache so the next match reloads it from the DB."""
+        self._embedding_cache = None
+
+    def _get_cache(self, db_session: Session) -> List[Tuple[str, np.ndarray]]:
+        if self._embedding_cache is None:
+            cache = []
+            for db_embedding in db_session.query(Embedding).all():
+                try:
+                    vector = np.array(json.loads(db_embedding.vector_json))
+                    cache.append((db_embedding.person.name, vector))
+                except Exception as e:
+                    logger.warning(f"Error loading embedding {db_embedding.id} into cache: {e}")
+            self._embedding_cache = cache
+        return self._embedding_cache
+
     def _get_faces(self, img: np.ndarray) -> list:
         """
         Run face detection, with a padded-retry fallback.
@@ -51,6 +74,12 @@ class FaceEngine:
             )
             faces = self.face_analysis.get(padded)
         return faces
+
+    @staticmethod
+    def _largest_face(faces: list):
+        """Pick the face with the largest bounding-box area (the subject, not a
+        bystander in the background)."""
+        return max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
 
     def detect_and_embed(self, image_path: str | Path) -> List[np.ndarray]:
         """
@@ -90,6 +119,44 @@ class FaceEngine:
             logger.error(f"Error detecting faces from bytes: {e}")
             return []
 
+    def detect_primary_embedding(self, image_path: str | Path) -> Optional[np.ndarray]:
+        """
+        Detect faces in a training image and return only the embedding of the
+        largest (primary subject) face — a training photo with a bystander in
+        the background should not have that second face's embedding blended
+        into the person's profile.
+        """
+        try:
+            img = cv2.imread(str(image_path))
+            if img is None:
+                logger.warning(f"Failed to read image: {image_path}")
+                return None
+
+            faces = self._get_faces(img)
+            if not faces:
+                return None
+            return self._largest_face(faces).embedding
+        except Exception as e:
+            logger.error(f"Error detecting primary face in {image_path}: {e}")
+            return None
+
+    def detect_primary_embedding_bytes(self, image_bytes: bytes) -> Optional[np.ndarray]:
+        """Bytes variant of detect_primary_embedding."""
+        try:
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if img is None:
+                logger.warning("Failed to decode image from bytes")
+                return None
+
+            faces = self._get_faces(img)
+            if not faces:
+                return None
+            return self._largest_face(faces).embedding
+        except Exception as e:
+            logger.error(f"Error detecting primary face from bytes: {e}")
+            return None
+
     def assess_quality(self, image_bytes: bytes) -> Optional[str]:
         """
         Cheap heuristic check for common, otherwise-silent causes of bad
@@ -126,42 +193,53 @@ class FaceEngine:
 
     def find_best_match(
         self, embedding: np.ndarray, db_session: Session
-    ) -> Tuple[Optional[str], float]:
+    ) -> Tuple[Optional[str], float, float]:
         """
-        Find best matching person in database.
-        Returns (person_name, confidence) or (None, 0.0) if no match.
+        Find best matching person via a k-NN majority vote over per-image
+        embeddings, with a margin check against the best-matching different
+        person.
+
+        Returns (person_name, similarity, margin). person_name is "unknown",
+        "uncertain", or a real person's name (the same three-way
+        classification as before) — never None once there is at least one
+        embedding in the database.
         """
-        embeddings = db_session.query(Embedding).all()
-        if not embeddings:
+        cache = self._get_cache(db_session)
+        if not cache:
             logger.debug("No embeddings in database yet")
-            return None, 0.0
+            return None, 0.0, 0.0
 
-        best_similarity = 0.0
-        best_person_name = None
+        scored = sorted(
+            ((self.similarity(embedding, vec), name) for name, vec in cache),
+            key=lambda x: x[0],
+            reverse=True,
+        )
 
-        for db_embedding in embeddings:
-            try:
-                vector = np.array(json.loads(db_embedding.vector_json))
-                sim = self.similarity(embedding, vector)
-                if sim > best_similarity:
-                    best_similarity = sim
-                    best_person_name = db_embedding.person.name
-            except Exception as e:
-                logger.warning(f"Error comparing with person {db_embedding.person_id}: {e}")
-                continue
+        top_k = scored[: settings.knn_k]
+        votes = Counter(name for _, name in top_k)
+        winner_name, _ = votes.most_common(1)[0]
+        winner_sim = max(sim for sim, name in top_k if name == winner_name)
 
-        # Determine confidence threshold
-        if best_similarity >= settings.similarity_threshold_known:
-            return best_person_name, best_similarity
-        elif best_similarity >= settings.similarity_threshold_unknown:
-            return "uncertain", best_similarity
+        runner_up_sim = next((sim for sim, name in scored if name != winner_name), 0.0)
+        margin = winner_sim - runner_up_sim
+
+        if (
+            winner_sim >= settings.similarity_threshold_known
+            and margin >= settings.similarity_margin_min
+        ):
+            return winner_name, winner_sim, margin
+        elif winner_sim >= settings.similarity_threshold_unknown:
+            return "uncertain", winner_sim, margin
         else:
-            return "unknown", best_similarity
+            return "unknown", winner_sim, margin
 
     def compute_person_embedding(self, person_id: int, db_session: Session) -> bool:
         """
-        Compute average embedding for a person from all training images.
-        Stores result in embeddings table.
+        Compute one embedding per training image for a person (instead of a
+        single averaged vector), refresh TrainingImage.face_detected/
+        has_embedding flags, and flag statistical outliers (images whose
+        embedding deviates far from the person's own other images) via the
+        existing quality_warning field.
         """
         try:
             person = db_session.query(Person).filter_by(id=person_id).first()
@@ -173,38 +251,74 @@ class FaceEngine:
                 logger.warning(f"Person {person.name} has no training images")
                 return False
 
-            all_embeddings = []
+            # (training_image, embedding_vector) pairs for images with a
+            # detected face.
+            image_embeddings: list[tuple[TrainingImage, np.ndarray]] = []
             for training_image in person.training_images:
                 image_path = settings.data_dir / "images" / training_image.filename
-                embeddings = self.detect_and_embed(image_path)
-                if embeddings:
-                    all_embeddings.extend(embeddings)
-                    training_image.face_detected = True
-                    training_image.has_embedding = True
+                vector = self.detect_primary_embedding(image_path)
+                training_image.face_detected = vector is not None
+                training_image.has_embedding = vector is not None
+                if vector is not None:
+                    image_embeddings.append((training_image, vector))
 
-            if not all_embeddings:
+            if not image_embeddings:
                 logger.warning(f"No faces found in {len(person.training_images)} images for {person.name}")
                 return False
 
-            # Compute average embedding
-            avg_embedding = np.mean(all_embeddings, axis=0)
-            vector_json = json.dumps(avg_embedding.tolist())
+            # Leave-one-out outlier detection: an image is an outlier if it
+            # deviates far from the mean of the person's *other* images.
+            # Only meaningful with enough images to form a stable mean.
+            if len(image_embeddings) >= settings.outlier_min_images:
+                vectors = np.array([v for _, v in image_embeddings])
+                total = vectors.sum(axis=0)
+                for i, (training_image, vector) in enumerate(image_embeddings):
+                    others_mean = (total - vector) / (len(vectors) - 1)
+                    sim_to_others = self.similarity(vector, others_mean)
 
-            # Store or update embedding
-            existing = db_session.query(Embedding).filter_by(person_id=person_id).first()
-            if existing:
-                existing.vector_json = vector_json
-                existing.image_count = len(all_embeddings)
-            else:
-                embedding = Embedding(
-                    person_id=person_id,
-                    vector_json=vector_json,
-                    image_count=len(all_embeddings),
-                )
-                db_session.add(embedding)
+                    existing_tags = (
+                        [t for t in training_image.quality_warning.split(",") if t]
+                        if training_image.quality_warning
+                        else []
+                    )
+                    is_outlier = sim_to_others < settings.outlier_similarity_threshold
+                    has_outlier_tag = "outlier" in existing_tags
+                    if is_outlier and not has_outlier_tag:
+                        existing_tags.append("outlier")
+                    elif not is_outlier and has_outlier_tag:
+                        existing_tags.remove("outlier")
+                    training_image.quality_warning = ",".join(existing_tags) or None
+
+            # Upsert one Embedding row per training image; remove rows for
+            # images that no longer have a usable embedding (deleted image,
+            # or face no longer detected on retrain).
+            embedded_image_ids = {ti.id for ti, _ in image_embeddings}
+            existing_embeddings = {
+                e.training_image_id: e
+                for e in db_session.query(Embedding).filter_by(person_id=person_id).all()
+                if e.training_image_id is not None
+            }
+            for training_image, vector in image_embeddings:
+                vector_json = json.dumps(vector.tolist())
+                existing = existing_embeddings.get(training_image.id)
+                if existing:
+                    existing.vector_json = vector_json
+                else:
+                    db_session.add(
+                        Embedding(
+                            person_id=person_id,
+                            training_image_id=training_image.id,
+                            vector_json=vector_json,
+                            image_count=1,
+                        )
+                    )
+            for training_image_id, embedding in existing_embeddings.items():
+                if training_image_id not in embedded_image_ids:
+                    db_session.delete(embedding)
 
             db_session.commit()
-            logger.info(f"Computed embedding for {person.name} from {len(all_embeddings)} faces")
+            self.invalidate_cache()
+            logger.info(f"Computed {len(image_embeddings)} per-image embeddings for {person.name}")
             return True
         except Exception as e:
             logger.error(f"Error computing person embedding: {e}")
@@ -220,15 +334,16 @@ class FaceEngine:
         results = []
 
         for embedding in embeddings:
-            person_name, confidence = self.find_best_match(embedding, db_session)
+            person_name, confidence, margin = self.find_best_match(embedding, db_session)
             results.append(
                 {
                     "name": person_name or "unknown",
                     "confidence": float(confidence),
+                    "margin": float(margin),
                 }
             )
 
         return {
             "faces_detected": len(embeddings),
-            "results": results if results else [{"name": "unknown", "confidence": 0.0}],
+            "results": results if results else [{"name": "unknown", "confidence": 0.0, "margin": 0.0}],
         }

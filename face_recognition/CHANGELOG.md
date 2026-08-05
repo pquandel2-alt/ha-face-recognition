@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.0.17
+
+- Feature (Einzel-Embeddings + k-NN-Matching statt Mittelwert pro Person): Jedes
+  Trainingsbild bekommt jetzt sein eigenes `Embedding` (`training_image_id`-FK, neu), statt
+  dass alle Bild-Embeddings einer Person zu einem einzigen Durchschnittsvektor verrechnet
+  werden. `find_best_match` vergleicht per Cosine-Similarity gegen einen In-Prozess-Cache
+  aller Bild-Embeddings, nimmt die Top-`knn_k` (Default 5) und entscheidet per
+  Mehrheitsvotum. Ein einzelnes schlechtes Trainingsbild verzerrt dadurch nicht mehr dauerhaft
+  das Ergebnis der ganzen Person. Nebenbei behoben: Enthielt ein Trainingsfoto mehrere
+  Gesichter (z. B. eine Person im Hintergrund), floss bisher jedes davon ins Training ein —
+  jetzt wird nur noch das größte erkannte Gesicht verwendet.
+- Feature (Sicherheitsabstand zwischen Kandidaten): `find_best_match` prüft zusätzlich zur
+  Ähnlichkeits-Schwelle jetzt den Abstand (Margin) zum besten Treffer einer *anderen* Person
+  (`similarity_margin_min`, Default 0.05). Zwei sich ähnliche Personen mit knappem Vorsprung
+  werden dadurch nicht mehr fälschlich als "sicherer" Treffer gemeldet, sondern auf
+  "uncertain"/"unknown" zurückgestuft.
+- Feature (Ausreißer-Erkennung beim Training): Nach dem Training vergleicht
+  `compute_person_embedding` jedes Trainingsbild einer Person per Leave-one-out gegen den
+  Mittelwert der übrigen Bilder dieser Person (mindestens `outlier_min_images`, Default 3,
+  nötig). Liegt die Ähnlichkeit unter `outlier_similarity_threshold` (Default 0.30), wird
+  `"outlier"` an die bestehende `TrainingImage.quality_warning`-Spalte angehängt und erscheint
+  als Warn-Badge in der Personen-Ansicht — z. B. bei einem versehentlich falsch zugeordneten
+  Foto oder einer extremen Kopfhaltung.
+- Feature (Mehrfach-Crop-Konsens): Statt nur den Gesichts-Crop mit der höchsten
+  Einzel-Konfidenz zu verwenden, wertet `main.py` jetzt alle von Frigate gelieferten Crops
+  eines Events gemeinsam aus (`_analyze_crops_for_consensus`). Erst wenn mindestens
+  `consensus_min_crops` (Default 2) Crops übereinstimmend dieselbe Person erkennen, gilt das
+  Ergebnis als gesichert. Ist nur ein Crop verfügbar (z. B. sehr kurzer Auftritt), greift ein
+  strengerer Fallback-Schwellwert (`consensus_fallback_margin_min`, Default 0.15). Ein
+  einzelner Ausreißer-Crop löst dadurch keine falsche Meldung mehr aus.
+- Feature (Event-Bild-Review mit Trainieren/Ablehnen): Die Events-Seite zeigt jetzt pro
+  Ereignis das tatsächlich von der KI analysierte Bild an (`RecognitionEvent.snapshot_path`,
+  bisher ungenutzte Spalte, wird jetzt befüllt). Bei "richtig erkannt" übernimmt „Trainieren"
+  das Bild als neues Trainingsbild der ausgewählten Person; bei "falsch erkannt" markiert
+  „Falsch erkannt" das Ereignis als bekannten Fehltreffer, ohne ein Trainingsbild anzulegen
+  ("Anti-Training"). Neue Endpunkte `GET /api/recognition/events/{id}/image`,
+  `POST /api/recognition/events/{id}/confirm`, `POST /api/recognition/events/{id}/reject`.
+  Alte Snapshots werden nach `frigate_snapshot_retention_hours` (Default 24) automatisch
+  aufgeräumt — diese Einstellung existierte bisher folgenlos.
+
 ## 1.0.16
 
 - Fix (stiller Fehlerfall bei MQTT-Verbindungsabbruch): `ha_discovery.py` setzt jetzt

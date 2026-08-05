@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from collections import Counter
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Depends, HTTPException, WebSocket
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session
 from config import settings
 from database import init_db, get_db, SessionLocal
 from models.event import RecognitionEvent
+from models.person import Person
 from routes import persons, training, recognition, frigate, stats
 from services.mqtt_service import MQTTService
 from services.frigate_service import FrigateService
@@ -54,6 +56,9 @@ main_loop: asyncio.AbstractEventLoop | None = None
 # is needed — consistent with the rest of this module.
 _last_update_check: dict[str, datetime] = {}
 
+SNAPSHOT_DIR = settings.data_dir / "snapshots"
+SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+
 
 def schedule_broadcast(data: dict) -> None:
     """
@@ -68,6 +73,84 @@ def schedule_broadcast(data: dict) -> None:
     """
     if main_loop is not None:
         asyncio.run_coroutine_threadsafe(broadcast_event(data), main_loop)
+
+
+def _resolve_person_id(person_name: str | None, db: Session) -> int | None:
+    """Look up the Person row behind a recognition's name, for the Events
+    review workflow. None for "unknown"/"uncertain"/no match."""
+    if not person_name or person_name in ("unknown", "uncertain"):
+        return None
+    person = db.query(Person).filter_by(name=person_name).first()
+    return person.id if person else None
+
+
+def _save_event_snapshot(event_id: str, image_bytes: bytes | None) -> str | None:
+    """
+    Persist the image actually used for a recognition attempt so the Events
+    page can show it for review (confirm/reject). Returns the filename
+    (relative to SNAPSHOT_DIR) to store on RecognitionEvent.snapshot_path, or
+    None on failure. Safe to call repeatedly for the same event_id — later
+    calls (update/end) overwrite the file with a better crop.
+    """
+    if not event_id or not image_bytes:
+        return None
+    try:
+        filename = f"{event_id}.jpg"
+        with open(SNAPSHOT_DIR / filename, "wb") as f:
+            f.write(image_bytes)
+        return filename
+    except Exception as e:
+        logger.warning(f"Could not save snapshot for event {event_id}: {e}")
+        return None
+
+
+def _analyze_crops_for_consensus(
+    crops: list[bytes], db: Session
+) -> tuple[str | None, float, float, bytes | None]:
+    """
+    Analyze all of Frigate's face-detector crops for an in-progress or
+    finished event and require multiple crops to agree on the same person
+    before trusting the result — a single outlier crop should not be enough
+    to publish a recognition.
+
+    Returns (person_name, confidence, margin, representative_crop_bytes).
+    person_name is None if no trustworthy consensus was reached yet.
+    """
+    from routes.training import get_face_engine
+
+    engine = get_face_engine()
+    per_crop = []  # (name, confidence, margin, crop_bytes)
+    for crop_bytes in crops:
+        result = engine.analyze_image(crop_bytes, db)
+        for face_result in result["results"]:
+            per_crop.append(
+                (
+                    face_result["name"],
+                    face_result["confidence"],
+                    face_result.get("margin", 0.0),
+                    crop_bytes,
+                )
+            )
+
+    if not per_crop:
+        return None, 0.0, 0.0, None
+
+    confident = [p for p in per_crop if p[0] not in ("unknown", "uncertain")]
+    if len(confident) >= settings.consensus_min_crops:
+        votes = Counter(p[0] for p in confident)
+        winner, _ = votes.most_common(1)[0]
+        agreeing = [p for p in confident if p[0] == winner]
+        best = max(agreeing, key=lambda p: p[1])
+        return best
+
+    # Not enough crops agree yet (e.g. only one crop available so far, or a
+    # very brief appearance that will never produce more). Only trust a
+    # single crop if it clears a stricter margin than the normal threshold.
+    best_single = max(per_crop, key=lambda p: p[1])
+    if best_single[0] not in ("unknown", "uncertain") and best_single[2] >= settings.consensus_fallback_margin_min:
+        return best_single
+
+    return None, best_single[1], 0.0, best_single[3]
 
 
 @app.on_event("startup")
@@ -98,6 +181,8 @@ async def startup():
             logger.warning("MQTT not connected, HA Discovery skipped")
     except Exception as e:
         logger.error(f"Failed to initialize MQTT: {e}")
+
+    asyncio.create_task(_snapshot_retention_loop())
 
 
 @app.on_event("shutdown")
@@ -180,8 +265,10 @@ def on_frigate_event(payload: dict):
             event = RecognitionEvent(
                 camera=camera,
                 person_name=person_name,
+                person_id=_resolve_person_id(person_name, db),
                 confidence=confidence,
                 frigate_event_id=event_id,
+                snapshot_path=_save_event_snapshot(event_id, snapshot_bytes),
                 notified=is_confident,
                 timestamp=timestamp,
             )
@@ -224,10 +311,12 @@ def on_frigate_event_update(event_id: str | None, camera: str):
     Frigate emits frequent "update" events while a track is still active,
     and progressively populates the /api/faces "train" bucket with
     dedicated face-detector crops during that same window — not only once
-    the track ends. Poll for those crops here (throttled per event_id) so a
-    confident, reliable result can be published within a second or two of
-    the person appearing, instead of only at "end" when they leave the
-    frame. No-ops once the event has already been notified.
+    the track ends. Poll for those crops here (throttled per event_id),
+    requiring multiple crops to agree (see _analyze_crops_for_consensus)
+    before trusting the result, so a confident, reliable result can be
+    published within a second or two of the person appearing, instead of
+    only at "end" when they leave the frame. No-ops once the event has
+    already been notified.
     """
     if not event_id:
         return
@@ -253,38 +342,37 @@ def on_frigate_event_update(event_id: str | None, camera: str):
         if not crops:
             return  # Frigate hasn't produced a face crop for this event yet.
 
-        from routes.training import get_face_engine
+        winner_name, winner_confidence, _margin, rep_crop = _analyze_crops_for_consensus(crops, db)
 
-        engine = get_face_engine()
-        best_name, best_confidence = None, -1.0
-        for crop_bytes in crops:
-            result = engine.analyze_image(crop_bytes, db)
-            for face_result in result["results"]:
-                if face_result["confidence"] > best_confidence:
-                    best_confidence = face_result["confidence"]
-                    best_name = face_result["name"]
+        if winner_name is None:
+            return  # Not confident/agreed yet — try again on the next throttled update.
 
-        if best_name in (None, "unknown", "uncertain"):
-            return  # Not confident yet — try again on the next throttled update.
+        snapshot_path = _save_event_snapshot(event_id, rep_crop)
+        person_id = _resolve_person_id(winner_name, db)
 
         if event is None:
             event = RecognitionEvent(
                 camera=camera,
-                person_name=best_name,
-                confidence=best_confidence,
+                person_name=winner_name,
+                person_id=person_id,
+                confidence=winner_confidence,
                 frigate_event_id=event_id,
+                snapshot_path=snapshot_path,
                 timestamp=now,
             )
             db.add(event)
         else:
-            event.person_name = best_name
-            event.confidence = best_confidence
+            event.person_name = winner_name
+            event.person_id = person_id
+            event.confidence = winner_confidence
+            if snapshot_path:
+                event.snapshot_path = snapshot_path
 
         event.notified = True
         db.commit()
 
         logger.info(
-            f"Real-time recognition via Frigate face crop (update event) for "
+            f"Real-time recognition via Frigate face crop consensus (update event) for "
             f"{event_id}: {event.person_name} ({event.confidence:.2f})"
         )
 
@@ -311,7 +399,7 @@ def on_frigate_event_update(event_id: str | None, camera: str):
 def on_frigate_event_end(event_id: str | None):
     """
     Fetch Frigate's own finalized recognition verdict (sub_label) for an
-    event, and re-run our own matching against Frigate's dedicated
+    event, and re-run our own consensus matching against Frigate's dedicated
     face-detector crops (the /api/faces "train" bucket) instead of the
     coarse whole-person snapshot used at "new" time. Those crops are
     tightly framed on the actual face the way our training images are,
@@ -338,17 +426,13 @@ def on_frigate_event_end(event_id: str | None):
         already_notified = bool(event and event.notified)
 
         crops = frigate.get_train_face_crops(event_id)
-        best_name, best_confidence = None, -1.0
+        best_name, best_confidence, snapshot_path = None, -1.0, None
         if crops:
-            from routes.training import get_face_engine
-
-            engine = get_face_engine()
-            for crop_bytes in crops:
-                result = engine.analyze_image(crop_bytes, db)
-                for face_result in result["results"]:
-                    if face_result["confidence"] > best_confidence:
-                        best_confidence = face_result["confidence"]
-                        best_name = face_result["name"]
+            best_name, best_confidence, _margin, rep_crop = _analyze_crops_for_consensus(crops, db)
+            if best_name is not None:
+                snapshot_path = _save_event_snapshot(event_id, rep_crop)
+            else:
+                best_confidence = -1.0
 
         refined = False
         if event is None:
@@ -359,15 +443,20 @@ def on_frigate_event_end(event_id: str | None):
             event = RecognitionEvent(
                 camera=frigate_event.get("camera", "unknown"),
                 person_name=best_name,
+                person_id=_resolve_person_id(best_name, db),
                 confidence=best_confidence,
                 frigate_event_id=event_id,
+                snapshot_path=snapshot_path,
                 timestamp=datetime.utcnow(),
             )
             db.add(event)
             refined = True
         elif best_name is not None and best_confidence > event.confidence:
             event.person_name = best_name
+            event.person_id = _resolve_person_id(best_name, db)
             event.confidence = best_confidence
+            if snapshot_path:
+                event.snapshot_path = snapshot_path
             refined = True
 
         if sub_label is not None:
@@ -386,7 +475,7 @@ def on_frigate_event_end(event_id: str | None):
 
         if refined:
             logger.info(
-                f"Refined recognition for event {event_id} using Frigate face crops: "
+                f"Refined recognition for event {event_id} using Frigate face crop consensus: "
                 f"{event.person_name} ({event.confidence:.2f})"
             )
             if should_publish:
@@ -415,6 +504,32 @@ def on_frigate_event_end(event_id: str | None):
         logger.error(f"Error processing Frigate event end for {event_id}: {e}", exc_info=True)
     finally:
         db.close()
+
+
+def _cleanup_old_snapshots():
+    """Delete persisted event snapshots older than frigate_snapshot_retention_hours,
+    bounding disk growth from the Events-page review workflow."""
+    cutoff = datetime.utcnow().timestamp() - settings.frigate_snapshot_retention_hours * 3600
+    removed = 0
+    for path in SNAPSHOT_DIR.glob("*.jpg"):
+        try:
+            if path.stat().st_mtime < cutoff:
+                path.unlink()
+                removed += 1
+        except OSError as e:
+            logger.warning(f"Could not remove old snapshot {path}: {e}")
+    if removed:
+        logger.info(f"Snapshot retention sweep: removed {removed} snapshot(s)")
+
+
+async def _snapshot_retention_loop():
+    """Background task: periodically sweep old event snapshots off disk."""
+    while True:
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, _cleanup_old_snapshots)
+        except Exception as e:
+            logger.error(f"Snapshot retention sweep failed: {e}", exc_info=True)
+        await asyncio.sleep(3600)
 
 
 async def broadcast_event(data: dict):

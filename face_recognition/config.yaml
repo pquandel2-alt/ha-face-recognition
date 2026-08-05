@@ -1,5 +1,5 @@
 name: "Face Recognition"
-version: "1.0.16"
+version: "1.0.17"
 slug: "face_recognition"
 description: "Lokale Gesichtserkennung mit InsightFace/ArcFace, Frigate-Integration und MQTT Discovery — läuft komplett offline im LAN."
 url: "https://github.com/pquandel2-alt/ha-face-recognition"
@@ -23,9 +23,16 @@ options:
   similarity_threshold_known: 0.50
   similarity_threshold_unknown: 0.35
   frigate_update_check_interval_seconds: 2
+  frigate_snapshot_retention_hours: 24
   quality_blur_threshold: 80.0
   quality_contrast_threshold: 20.0
   cluster_similarity_threshold: 0.45
+  similarity_margin_min: 0.05
+  knn_k: 5
+  consensus_min_crops: 2
+  consensus_fallback_margin_min: 0.15
+  outlier_similarity_threshold: 0.30
+  outlier_min_images: 3
   log_level: "INFO"
 schema:
   mqtt_host: "str"
@@ -41,7 +48,14 @@ schema:
   similarity_threshold_known: "float(0,1)"
   similarity_threshold_unknown: "float(0,1)"
   frigate_update_check_interval_seconds: "int(1,10)"
+  frigate_snapshot_retention_hours: "int(1,720)"
   quality_blur_threshold: "float(0,1000)"
   quality_contrast_threshold: "float(0,255)"
   cluster_similarity_threshold: "float(0,1)"
+  similarity_margin_min: "float(0,1)"
+  knn_k: "int(1,20)"
+  consensus_min_crops: "int(1,10)"
+  consensus_fallback_margin_min: "float(0,1)"
+  outlier_similarity_threshold: "float(0,1)"
+  outlier_min_images: "int(2,20)"
   log_level: "list(DEBUG|INFO|WARNING|ERROR)"

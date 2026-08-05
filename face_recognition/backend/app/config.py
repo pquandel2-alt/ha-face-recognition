@@ -53,6 +53,28 @@ class Settings(BaseSettings):
     # into the same on-the-fly cluster in the Frigate-import UI (no
     # persistence — purely a request-time convenience for bulk selection).
     cluster_similarity_threshold: float = 0.45
+    # Minimum gap between the winning candidate's similarity and the best
+    # similarity among a *different* person before a match counts as "known"
+    # — guards against two similar-looking people separated by a hair.
+    similarity_margin_min: float = 0.05
+    # Number of nearest per-image embeddings considered in the k-NN majority
+    # vote in find_best_match.
+    knn_k: int = 5
+    # Minimum number of Frigate face crops that must agree on the same person
+    # before a "update"/"end" recognition is trusted.
+    consensus_min_crops: int = 2
+    # Stricter margin required to publish from a single crop when fewer than
+    # consensus_min_crops crops are available yet (e.g. a very brief
+    # appearance) — avoids regressing responsiveness while still guarding
+    # against a lone bad crop.
+    consensus_fallback_margin_min: float = 0.15
+    # Below this leave-one-out similarity to a person's own other training
+    # images, a training image is flagged "outlier" in quality_warning.
+    outlier_similarity_threshold: float = 0.30
+    # Minimum number of training images a person needs before outlier
+    # detection runs (too few images make the leave-one-out comparison
+    # meaningless).
+    outlier_min_images: int = 3
 
     # Database
     data_dir: Path = Path("/data")
