@@ -1,6 +1,9 @@
 import axios from 'axios'
 
-const API_BASE = '/api'
+// Relative (no leading slash) so requests resolve against the current
+// document URL — required behind HA Ingress, which serves the app under a
+// dynamic path prefix (/api/hassio_ingress/<token>/) rather than at "/".
+const API_BASE = 'api'
 
 const api = axios.create({
   baseURL: API_BASE,

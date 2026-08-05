@@ -31,6 +31,10 @@ class TrainingImage(Base):
     has_embedding = Column(Boolean, default=False)
     source = Column(String(50), default="upload")  # "upload" or "frigate_import"
     frigate_event_id = Column(String(255), nullable=True)
+    # "<frigate_name>/<filename>" of the source image in Frigate's /api/faces
+    # bucket, when imported via the "Trainierte Gesichter" flow. Used to skip
+    # re-importing the same image on a later Frigate-import run.
+    frigate_source_filename = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships

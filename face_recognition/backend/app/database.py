@@ -58,6 +58,17 @@ def _migrate_add_missing_columns():
                 conn.exec_driver_sql(
                     f"ALTER TABLE recognition_events ADD COLUMN {column} {ddl_type}"
                 )
+
+        existing_training_columns = {
+            row[1] for row in conn.exec_driver_sql("PRAGMA table_info(training_images)")
+        }
+        for column, ddl_type in (("frigate_source_filename", "VARCHAR(500)"),):
+            if column not in existing_training_columns:
+                logger.info(f"Migrating: adding column {column} to training_images")
+                conn.exec_driver_sql(
+                    f"ALTER TABLE training_images ADD COLUMN {column} {ddl_type}"
+                )
+
         conn.commit()
 
 

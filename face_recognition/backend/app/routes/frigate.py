@@ -41,13 +41,28 @@ def frigate_health(frigate: FrigateService = Depends(get_frigate_service)):
 @router.get("/snapshots")
 def list_snapshots(
     limit: int = 50,
+    db: Session = Depends(get_db),
     frigate: FrigateService = Depends(get_frigate_service),
 ):
-    """Get list of recent person detection events from Frigate."""
+    """
+    Get list of recent person detection events from Frigate.
+
+    Excludes events already imported as a training image in a previous run
+    (tracked via TrainingImage.frigate_event_id), so a repeat import only
+    ever offers genuinely new events.
+    """
     events = frigate.get_recent_events(label="person", limit=limit)
 
     if not events:
         return {"events": [], "count": 0}
+
+    already_imported = {
+        row[0]
+        for row in db.query(TrainingImage.frigate_event_id).filter(
+            TrainingImage.frigate_event_id.isnot(None)
+        )
+    }
+    events = [e for e in events if e.get("id") not in already_imported]
 
     return {
         "events": [
@@ -89,15 +104,35 @@ def get_snapshot(
 
 
 @router.get("/faces")
-def list_trained_faces(frigate: FrigateService = Depends(get_frigate_service)):
+def list_trained_faces(
+    db: Session = Depends(get_db),
+    frigate: FrigateService = Depends(get_frigate_service),
+):
     """
     List Frigate's own trained face images (from Frigate's built-in Face
     Recognition feature), grouped by person name.
+
+    Excludes filenames already imported as training images in a previous
+    run (tracked via TrainingImage.frigate_source_filename), so a repeat
+    import only ever offers genuinely new images.
     """
     faces = frigate.get_trained_faces()
+    already_imported = {
+        row[0]
+        for row in db.query(TrainingImage.frigate_source_filename).filter(
+            TrainingImage.frigate_source_filename.isnot(None)
+        )
+    }
+
+    new_faces = {}
+    for name, files in faces.items():
+        remaining = [f for f in files if f"{name}/{f}" not in already_imported]
+        if remaining:
+            new_faces[name] = remaining
+
     return {
-        "faces": {name: files for name, files in faces.items()},
-        "names": list(faces.keys()),
+        "faces": new_faces,
+        "names": list(new_faces.keys()),
     }
 
 
@@ -150,7 +185,14 @@ def import_trained_faces(
 
     for filename in body.filenames:
         filename = _safe_face_path_part(filename)
+        source_key = f"{name}/{filename}"
         try:
+            if db.query(TrainingImage).filter_by(frigate_source_filename=source_key).first():
+                # Already imported in a previous run — the gallery should have
+                # excluded it already, but guard against stale frontend state.
+                skipped.append(filename)
+                continue
+
             image_bytes = frigate.get_face_image(name, filename)
             if not image_bytes:
                 skipped.append(filename)
@@ -169,6 +211,7 @@ def import_trained_faces(
                 filename=local_filename,
                 face_detected=bool(embeddings),
                 source="frigate_import",
+                frigate_source_filename=source_key,
             )
             db.add(training_image)
             db.commit()
@@ -210,6 +253,12 @@ def import_snapshot_as_training_image(
     person = db.query(Person).filter_by(id=person_id).first()
     if not person:
         raise HTTPException(status_code=404, detail="Person not found")
+
+    existing = db.query(TrainingImage).filter_by(frigate_event_id=event_id).first()
+    if existing:
+        # Already imported in a previous run — the gallery should have
+        # excluded it already, but guard against stale frontend state.
+        raise HTTPException(status_code=409, detail="Event already imported")
 
     try:
         # Get snapshot from Frigate

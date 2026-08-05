@@ -58,6 +58,9 @@ function TrainedFacesTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['persons'] })
       queryClient.invalidateQueries({ queryKey: ['training_status'] })
+      // Backend excludes already-imported filenames from this list, so
+      // refetching removes what was just imported from the gallery.
+      queryClient.invalidateQueries({ queryKey: ['frigate_faces'] })
     },
   })
 
@@ -217,6 +220,9 @@ function EventSnapshotsTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['persons'] })
       queryClient.invalidateQueries({ queryKey: ['training_status'] })
+      // Backend excludes already-imported events from this list, so
+      // refetching removes what was just imported from the gallery.
+      queryClient.invalidateQueries({ queryKey: ['frigate_snapshots'] })
       setSelectedEventIds([])
     },
   })

@@ -16,10 +16,13 @@ export default function EventsPage() {
     // single source of truth, so late-arriving Frigate comparison data
     // (attached asynchronously once Frigate finalizes its own verdict)
     // always shows up, even for already-rendered rows.
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/api/ws/events`
+    // Resolve relative to the current document URL (not an absolute "/api/..."
+    // path) so this still finds the app when served under HA Ingress's
+    // dynamic path prefix (/api/hassio_ingress/<token>/).
+    const wsUrl = new URL('api/ws/events', window.location.href)
+    wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:'
 
-    const ws = new WebSocket(wsUrl)
+    const ws = new WebSocket(wsUrl.href)
 
     ws.onmessage = (event) => {
       try {

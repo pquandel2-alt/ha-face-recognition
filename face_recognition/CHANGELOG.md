@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.0.14
+
+- Feature (Nutzer-Wunsch: Oberfläche soll sich in Home Assistant selbst öffnen statt in einem
+  separaten Browser-Fenster): Home Assistant Ingress aktiviert (`config.yaml`: `ingress: true`,
+  `ingress_port: 8000`, `panel_icon`). Der Host-Port 8000 und der `webui`-Eintrag entfallen — der
+  „Open Web UI"-Button in Supervisor öffnet die App jetzt eingebettet innerhalb von Home Assistant
+  (iframe), zugriffsgeschützt über die bestehende HA-Anmeldung statt eines offenen, unauthentifizierten
+  Host-Ports.
+  Ingress bedient die App unter einem dynamischen Pfad-Präfix (`/api/hassio_ingress/<token>/`), das
+  beim Build nicht bekannt ist. Dafür im Frontend auf durchgängig relative URLs umgestellt:
+  `vite.config.js` (`base: './'`, relative Asset-Pfade), `App.jsx` (`BrowserRouter` → `HashRouter`,
+  da ein fester `basename` mit dem dynamischen Präfix nicht kompatibel wäre), `api.js`
+  (Axios-`baseURL` ohne führenden Slash) und `EventsPage.jsx` (WebSocket-URL wird jetzt relativ zu
+  `window.location.href` aufgelöst statt absolut über `/api/ws/events`). Funktioniert dadurch
+  weiterhin unverändert auch im direkten docker-compose-Betrieb ohne Ingress.
+- Fix (Nutzer-Meldung: beim wiederholten Import aus Frigate wurden erneut alle Bilder angeboten
+  statt nur neuer): `TrainingImage` bekommt eine neue Spalte `frigate_source_filename`
+  (`<frigate_name>/<filename>`, per Migration in `database.py` ergänzt). `GET /frigate/faces` und
+  `GET /frigate/snapshots` filtern bereits importierte Bilder bzw. Events jetzt heraus, bevor sie
+  ans Frontend gehen — ein zweiter Import-Durchlauf zeigt dadurch nur noch echte Neuzugänge.
+  `POST /frigate/faces/import` und `POST /frigate/import/{event_id}` lehnen einen erneuten Import
+  bereits importierter Bilder/Events zusätzlich serverseitig ab (Schutz gegen veraltete
+  Frontend-Zwischenstände). Die Galerien in `FrigateImportPage.jsx` invalidieren nach einem
+  erfolgreichen Import jetzt ihre jeweilige Query, damit gerade importierte Bilder sofort
+  verschwinden statt erst nach einem Reload.
+
 ## 1.0.13
 
 - Fix (Nutzer-Meldung: "Frigate hat mir richtig erkannt aber unsere App hat mich nicht erkannt" —
