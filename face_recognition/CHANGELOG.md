@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.19
+
+- Fix (MQTT-Verbindungsaufbau robuster): Ist der Broker beim Start noch nicht erreichbar (z. B.
+  weil das Mosquitto-Add-on noch hochfährt), verbindet sich `MQTTService` jetzt asynchron
+  (`connect_async` statt blockierendem `connect`) und versucht es automatisch mit Backoff erneut
+  (`reconnect_delay_set(1, 60)`), statt dauerhaft unverbunden zu bleiben. Die HA-Discovery-Configs
+  werden dafür nicht mehr nur einmalig beim Start publiziert, sondern bei jedem erfolgreichen
+  (Re-)Connect über einen neuen `on_connect`-Callback — das behebt nebenbei, dass sie nach einem
+  echten Broker-Neustart bisher nie erneut publiziert wurden.
+- Feature (sofortiges Auto-Retrain nach Event-Bestätigung): Bestätigt man ein Ereignis auf der
+  Events-Seite ("Trainieren"), wird die Person jetzt automatisch direkt neu trainiert — kein
+  manueller Zusatzschritt über den Training-Tab mehr nötig.
+- Fix (ungültiger `device_class`): Der `face_confidence`-Sensor sendete per MQTT Discovery
+  `device_class: severity`, was kein gültiger Wert ist und von Home Assistant 2026.7 abgelehnt
+  wird. Entfernt — der Sensor bleibt über `unit_of_measurement: "%"` weiterhin korrekt
+  beschriftet.
+
 ## 1.0.18
 
 - Feature (schnellere Echtzeit-Erkennung während der Anwesenheit): Die in v1.0.17 eingeführte

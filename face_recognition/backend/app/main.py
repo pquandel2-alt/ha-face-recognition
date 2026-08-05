@@ -173,6 +173,13 @@ def _analyze_crops_for_consensus(
     return None, best_single[1], 0.0, best_single[3]
 
 
+def publish_ha_discovery_configs():
+    """Publish all HA Discovery configs. Called on every successful MQTT (re-)connect."""
+    for entity_id, config in get_discovery_configs().items():
+        mqtt_service.publish_ha_discovery(entity_id, entity_id, config)
+    logger.info("Published Home Assistant MQTT Discovery configs")
+
+
 @app.on_event("startup")
 async def startup():
     """Initialize database, start MQTT service, and setup HA Discovery."""
@@ -187,18 +194,14 @@ async def startup():
     # Initialize MQTT service
     mqtt_service = MQTTService()
     mqtt_service.set_frigate_callback(on_frigate_event)
+    # Publishes HA Discovery configs on every successful (re-)connect, not
+    # just the first — connect() is now async/non-blocking with automatic
+    # reconnect, so we can no longer assume the connection is up by the time
+    # startup() returns.
+    mqtt_service.set_on_connect_callback(publish_ha_discovery_configs)
 
     try:
         mqtt_service.connect()
-        await asyncio.sleep(1)  # Give MQTT time to connect
-
-        # Publish HA Discovery configs
-        if mqtt_service.connected:
-            for entity_id, config in get_discovery_configs().items():
-                mqtt_service.publish_ha_discovery(entity_id, entity_id, config)
-            logger.info("Published Home Assistant MQTT Discovery configs")
-        else:
-            logger.warning("MQTT not connected, HA Discovery skipped")
     except Exception as e:
         logger.error(f"Failed to initialize MQTT: {e}")
 

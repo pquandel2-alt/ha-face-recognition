@@ -20,11 +20,16 @@ class MQTTService:
         self.client.on_message = self._on_message
         self.connected = False
         self.frigate_callback: Optional[Callable] = None
+        self.on_connect_callback: Optional[Callable] = None
         self._thread: Optional[threading.Thread] = None
 
     def set_frigate_callback(self, callback: Callable):
         """Set callback for Frigate events."""
         self.frigate_callback = callback
+
+    def set_on_connect_callback(self, callback: Callable):
+        """Set callback invoked on every successful (re-)connect."""
+        self.on_connect_callback = callback
 
     def _on_connect(self, client, userdata, connect_flags, reason_code, properties):
         """Called when connected to broker."""
@@ -36,6 +41,8 @@ class MQTTService:
             # the Last Will (set in connect()) takes over and flips this to
             # "offline" automatically if the connection drops uncleanly.
             client.publish(settings.mqtt_availability_topic, "online", qos=1, retain=True)
+            if self.on_connect_callback:
+                self.on_connect_callback()
         else:
             logger.error(f"MQTT connection failed: {reason_code}")
             self.connected = False
@@ -65,14 +72,18 @@ class MQTTService:
             # behalf so HA's sensors show "unavailable" instead of silently
             # keeping the last-known person/confidence forever.
             self.client.will_set(settings.mqtt_availability_topic, "offline", qos=1, retain=True)
-            self.client.connect(settings.mqtt_host, settings.mqtt_port, keepalive=60)
+            # Retry with backoff (1s to 60s) on both the initial connect and
+            # any later disconnect — connect_async() doesn't block or raise
+            # if the broker isn't reachable yet, loop_forever() below keeps
+            # retrying in the background until it succeeds.
+            self.client.reconnect_delay_set(min_delay=1, max_delay=60)
+            self.client.connect_async(settings.mqtt_host, settings.mqtt_port, keepalive=60)
             # Start background loop
             self._thread = threading.Thread(target=self.client.loop_forever, daemon=True)
             self._thread.start()
             logger.info("MQTT service started")
         except Exception as e:
             logger.error(f"Failed to connect to MQTT: {e}")
-            raise
 
     def disconnect(self):
         """Disconnect from MQTT broker."""

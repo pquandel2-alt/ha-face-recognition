@@ -44,7 +44,6 @@ def get_discovery_configs() -> dict:
             "value_template": "{{ value_json.confidence | round(2) }}",
             "unit_of_measurement": "%",
             "json_attributes_topic": f"{base_topic}",
-            "device_class": "severity",
             "icon": "mdi:percent",
             "device": device,
             **availability,

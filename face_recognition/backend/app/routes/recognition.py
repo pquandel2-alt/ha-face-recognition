@@ -122,9 +122,9 @@ def confirm_event(
 ):
     """
     "Train on this": the recognition (or the user's correction) was right —
-    copy the event's snapshot into the person's training images. Does not
-    auto-retrain, consistent with the existing manual "Train" button flow;
-    the response flags needs_retrain so the UI can prompt for it.
+    copy the event's snapshot into the person's training images and
+    immediately retrain the person's embedding, no separate manual step
+    needed.
     """
     event = db.query(RecognitionEvent).filter_by(id=event_id).first()
     if not event:
@@ -170,14 +170,17 @@ def confirm_event(
     db.commit()
     db.refresh(training_image)
 
+    retrained = engine.compute_person_embedding(target_person_id, db)
+
     logger.info(
-        f"Confirmed event {event_id} for {person.name}, added training image {training_image.id}"
+        f"Confirmed event {event_id} for {person.name}, added training image "
+        f"{training_image.id}, retrained={retrained}"
     )
     return {
         "event_id": event_id,
         "person_id": target_person_id,
         "training_image_id": training_image.id,
-        "needs_retrain": True,
+        "retrained": retrained,
     }
 
 
