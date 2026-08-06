@@ -98,7 +98,9 @@ class FrigateService:
             logger.error(f"Error fetching Frigate trained faces: {e}")
             return {}
 
-    def get_train_face_crops(self, event_id: str) -> List[bytes]:
+    def get_train_face_crops(
+        self, event_id: str, exclude_filenames: frozenset[str] = frozenset()
+    ) -> List[tuple[str, bytes]]:
         """
         Fetch Frigate's own auto-collected face-detector crops for one event
         from the /api/faces 'train' bucket (filenames are prefixed with the
@@ -106,22 +108,33 @@ class FrigateService:
         these — tightly cropped to the actual face — unlike our crop=1
         snapshot which is the whole person bounding box, so these are a much
         better match for the framing our stored embeddings were trained on.
+
+        Frigate accumulates crops for an event over its whole lifetime and
+        this always lists the full accumulated set, so callers pass
+        exclude_filenames (filenames already analyzed in an earlier poll for
+        the same event) to fetch only genuinely new crops instead of
+        re-downloading + re-analyzing everything on every throttled poll.
+
+        Returns (filename, content) pairs — the filename is what the caller
+        uses to track "already analyzed" across polls.
         """
         try:
             url = f"{self.base_url}/api/faces"
             response = self.session.get(url, timeout=self.timeout)
             response.raise_for_status()
             filenames = response.json().get("train", [])
-            matching = [f for f in filenames if f.startswith(f"{event_id}-")]
+            matching = [
+                f for f in filenames if f.startswith(f"{event_id}-") and f not in exclude_filenames
+            ]
             if not matching:
                 return []
 
-            def fetch(filename: str) -> Optional[bytes]:
+            def fetch(filename: str) -> Optional[tuple[str, bytes]]:
                 try:
                     image_response = self.session.get(
                         f"{self.base_url}/clips/faces/train/{filename}", timeout=self.timeout
                     )
-                    return image_response.content if image_response.ok else None
+                    return (filename, image_response.content) if image_response.ok else None
                 except Exception as e:
                     logger.warning(f"Error fetching train face crop {filename}: {e}")
                     return None
@@ -132,7 +145,7 @@ class FrigateService:
             # "update" poll while a person is still in frame.
             with ThreadPoolExecutor(max_workers=min(len(matching), 4)) as executor:
                 results = list(executor.map(fetch, matching))
-            return [content for content in results if content is not None]
+            return [item for item in results if item is not None]
         except Exception as e:
             logger.error(f"Error fetching train face crops for event {event_id}: {e}")
             return []

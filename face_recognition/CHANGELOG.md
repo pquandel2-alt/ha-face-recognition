@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.23
+
+- Fix (unnötig hohe CPU-Last / Erkennungsdauer): Während ein Frigate-Event noch aktiv war, wurden
+  bei jedem Update-Poll (standardmäßig jede Sekunde) alle bisher gesammelten Gesichts-Crops
+  erneut komplett neu analysiert, statt nur die seit dem letzten Poll neu hinzugekommenen — bei
+  einer Person, die z. B. 8 Sekunden im Bild war, wurden so bis zu 36 statt 8 Einzel-Analysen
+  ausgeführt (quadratisch statt linear mit der Verweildauer). Frühere Analyseergebnisse werden
+  jetzt pro Event zwischengespeichert und in die Konsens-Auswertung eingerechnet, ohne sie neu zu
+  berechnen — reduziert CPU-Last und die gemeldete Erkennungsdauer bei länger im Bild bleibenden
+  Personen deutlich, ohne die Erkennungsgenauigkeit oder -geschwindigkeit zu verschlechtern.
+
 ## 1.0.22
 
 - Feature (Erkennungsdauer pro Event): Jedes Ereignis auf der Events-Seite zeigt jetzt, wie
