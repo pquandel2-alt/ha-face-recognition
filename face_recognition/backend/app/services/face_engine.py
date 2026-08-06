@@ -1,19 +1,60 @@
 import json
 import logging
+import os
+import threading
+import time
 from collections import Counter
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Optional, Tuple, List
 
 import cv2
 import numpy as np
+import psutil
 from insightface.app import FaceAnalysis
 from sqlalchemy.orm import Session
 
 from config import settings
+from models.cpu_sample import CpuSample
 from models.person import Person, Embedding, TrainingImage
 
 logger = logging.getLogger(__name__)
+
+# Per-process CPU sampling around recognition runs. The first cpu_percent()
+# call after Process() creation has no reference point and returns garbage,
+# so it's primed once here and discarded.
+_cpu_process = psutil.Process(os.getpid())
+_cpu_process.cpu_percent(interval=None)
+
+# Recognition can run many times per second during multi-crop consensus, so
+# writes are throttled to bound cpu_samples table growth without losing
+# chart resolution.
+CPU_SAMPLE_MIN_INTERVAL_SECONDS = 5
+_cpu_sample_lock = threading.Lock()
+_last_cpu_sample_at: Optional[datetime] = None
+
+
+def _record_cpu_sample(db_session: Session) -> None:
+    """Sample current process CPU usage and persist it, throttled to at most
+    one row per CPU_SAMPLE_MIN_INTERVAL_SECONDS, to chart load during actual
+    recognition runs."""
+    global _last_cpu_sample_at
+
+    percent = _cpu_process.cpu_percent(interval=None)
+    now = datetime.utcnow()
+
+    with _cpu_sample_lock:
+        if _last_cpu_sample_at is not None and (now - _last_cpu_sample_at).total_seconds() < CPU_SAMPLE_MIN_INTERVAL_SECONDS:
+            return
+        _last_cpu_sample_at = now
+
+    try:
+        db_session.add(CpuSample(timestamp=now, cpu_percent=percent))
+        db_session.commit()
+    except Exception as e:
+        logger.warning(f"Could not record CPU sample: {e}")
+        db_session.rollback()
 
 
 class FaceEngine:
@@ -330,7 +371,9 @@ class FaceEngine:
         Analyze image bytes: detect faces, find matches.
         Returns dict with recognition results.
         """
+        start = time.monotonic()
         embeddings = self.detect_and_embed_bytes(image_bytes)
+        _record_cpu_sample(db_session)
         results = []
 
         for embedding in embeddings:
@@ -345,5 +388,6 @@ class FaceEngine:
 
         return {
             "faces_detected": len(embeddings),
+            "duration_ms": (time.monotonic() - start) * 1000,
             "results": results if results else [{"name": "unknown", "confidence": 0.0, "margin": 0.0}],
         }

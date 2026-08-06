@@ -1,5 +1,5 @@
 name: "Face Recognition"
-version: "1.0.20"
+version: "1.0.22"
 slug: "face_recognition"
 description: "Lokale Gesichtserkennung mit InsightFace/ArcFace, Frigate-Integration und MQTT Discovery — läuft komplett offline im LAN."
 url: "https://github.com/pquandel2-alt/ha-face-recognition"

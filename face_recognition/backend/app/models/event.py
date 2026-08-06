@@ -26,6 +26,12 @@ class RecognitionEvent(Base):
     # as a new training image) or "rejected" (marked as a known false
     # positive, never used as training data). NULL until reviewed.
     verdict = Column(String(20), nullable=True)
+    # How long our own recognition took to produce this event's result, and
+    # (for comparison) Frigate's own face recognizer's current average
+    # inference speed at that time — both in milliseconds. NULL if unknown
+    # (e.g. Frigate's face recognition feature isn't enabled).
+    recognition_duration_ms = Column(Float, nullable=True)
+    frigate_recognition_duration_ms = Column(Float, nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     # Relationships

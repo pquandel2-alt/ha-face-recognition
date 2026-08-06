@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.22
+
+- Feature (Erkennungsdauer pro Event): Jedes Ereignis auf der Events-Seite zeigt jetzt, wie
+  lange die eigene Gesichtserkennung gebraucht hat (in Millisekunden) — und zum Vergleich
+  Frigates eigene aktuelle Gesichtserkennungs-Geschwindigkeit (aus `/api/stats`, sofern Frigates
+  eingebaute Gesichtserkennung aktiviert ist). Letztere ist ein systemweiter Mittelwert von
+  Frigate, kein exakter Pro-Event-Wert, aber zeigt gut, wie beide Systeme im Vergleich abschneiden.
+
+## 1.0.21
+
+- Feature (CPU-Auslastung in Statistik): Die Stats-Seite zeigt jetzt ein Diagramm der
+  CPU-Auslastung während tatsächlich laufender Gesichtserkennung. Jeder Erkennungslauf misst die
+  eigene Prozess-CPU-Last (per `psutil`) und speichert sie throttled (max. alle 5 Sekunden), damit
+  die Datenbank auch bei vielen Erkennungen pro Sekunde (Mehrfach-Crop-Konsens) nicht unnötig
+  wächst. Werte über 7 Tage werden automatisch wieder gelöscht.
+
 ## 1.0.20
 
 - Feature (automatische Event-Löschung): Erkennungs-Ereignisse werden jetzt standardmäßig nach

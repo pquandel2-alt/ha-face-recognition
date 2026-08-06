@@ -54,6 +54,8 @@ def _migrate_add_missing_columns():
             ("frigate_sub_label_score", "FLOAT"),
             ("notified", "BOOLEAN DEFAULT 0"),
             ("verdict", "VARCHAR(20)"),
+            ("recognition_duration_ms", "FLOAT"),
+            ("frigate_recognition_duration_ms", "FLOAT"),
         ):
             if column not in existing:
                 logger.info(f"Migrating: adding column {column} to recognition_events")
@@ -124,6 +126,7 @@ def init_db():
     """Create all tables."""
     logger.info("Initializing database...")
     from models.settings import AppSettings  # noqa: F401 — register table with Base
+    from models.cpu_sample import CpuSample  # noqa: F401 — register table with Base
 
     Base.metadata.create_all(bind=engine)
     _migrate_add_missing_columns()

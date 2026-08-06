@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from config import settings
 from database import init_db, get_db, SessionLocal
+from models.cpu_sample import CpuSample
 from models.event import RecognitionEvent
 from models.person import Person
 from routes import persons, training, recognition, frigate, stats, settings as settings_routes
@@ -108,18 +110,22 @@ def _save_event_snapshot(event_id: str, image_bytes: bytes | None) -> str | None
 
 def _analyze_crops_for_consensus(
     crops: list[bytes],
-) -> tuple[str | None, float, float, bytes | None]:
+) -> tuple[str | None, float, float, bytes | None, float]:
     """
     Analyze all of Frigate's face-detector crops for an in-progress or
     finished event and require multiple crops to agree on the same person
     before trusting the result — a single outlier crop should not be enough
     to publish a recognition.
 
-    Returns (person_name, confidence, margin, representative_crop_bytes).
+    Returns (person_name, confidence, margin, representative_crop_bytes,
+    duration_ms) — duration_ms is the total wall-clock time to analyze all
+    crops and reach a verdict (crops run in parallel, so this is the actual
+    end-to-end recognition latency for update/end events, not a per-crop sum).
     person_name is None if no trustworthy consensus was reached yet.
     """
+    start = time.monotonic()
     if not crops:
-        return None, 0.0, 0.0, None
+        return None, 0.0, 0.0, None, 0.0
 
     from routes.training import get_face_engine
 
@@ -153,8 +159,10 @@ def _analyze_crops_for_consensus(
         per_crop_lists = list(executor.map(analyze_one, crops))
     per_crop = [item for sublist in per_crop_lists for item in sublist]
 
+    duration_ms = (time.monotonic() - start) * 1000
+
     if not per_crop:
-        return None, 0.0, 0.0, None
+        return None, 0.0, 0.0, None, duration_ms
 
     confident = [p for p in per_crop if p[0] not in ("unknown", "uncertain")]
     if len(confident) >= settings.consensus_min_crops:
@@ -162,16 +170,16 @@ def _analyze_crops_for_consensus(
         winner, _ = votes.most_common(1)[0]
         agreeing = [p for p in confident if p[0] == winner]
         best = max(agreeing, key=lambda p: p[1])
-        return best
+        return (*best, duration_ms)
 
     # Not enough crops agree yet (e.g. only one crop available so far, or a
     # very brief appearance that will never produce more). Only trust a
     # single crop if it clears a stricter margin than the normal threshold.
     best_single = max(per_crop, key=lambda p: p[1])
     if best_single[0] not in ("unknown", "uncertain") and best_single[2] >= settings.consensus_fallback_margin_min:
-        return best_single
+        return (*best_single, duration_ms)
 
-    return None, best_single[1], 0.0, best_single[3]
+    return None, best_single[1], 0.0, best_single[3], duration_ms
 
 
 def publish_ha_discovery_configs():
@@ -317,6 +325,8 @@ def on_frigate_event(payload: dict):
                 snapshot_path=_save_event_snapshot(event_id, snapshot_bytes),
                 notified=is_confident,
                 timestamp=timestamp,
+                recognition_duration_ms=result.get("duration_ms"),
+                frigate_recognition_duration_ms=frigate.get_face_recognition_speed_ms(),
             )
             db.add(event)
             db.commit()
@@ -388,7 +398,7 @@ def on_frigate_event_update(event_id: str | None, camera: str):
         if not crops:
             return  # Frigate hasn't produced a face crop for this event yet.
 
-        winner_name, winner_confidence, _margin, rep_crop = _analyze_crops_for_consensus(crops)
+        winner_name, winner_confidence, _margin, rep_crop, duration_ms = _analyze_crops_for_consensus(crops)
 
         if winner_name is None:
             return  # Not confident/agreed yet — try again on the next throttled update.
@@ -405,12 +415,15 @@ def on_frigate_event_update(event_id: str | None, camera: str):
                 frigate_event_id=event_id,
                 snapshot_path=snapshot_path,
                 timestamp=now,
+                recognition_duration_ms=duration_ms,
+                frigate_recognition_duration_ms=frigate.get_face_recognition_speed_ms(),
             )
             db.add(event)
         else:
             event.person_name = winner_name
             event.person_id = person_id
             event.confidence = winner_confidence
+            event.recognition_duration_ms = duration_ms
             if snapshot_path:
                 event.snapshot_path = snapshot_path
 
@@ -472,9 +485,9 @@ def on_frigate_event_end(event_id: str | None):
         already_notified = bool(event and event.notified)
 
         crops = frigate.get_train_face_crops(event_id)
-        best_name, best_confidence, snapshot_path = None, -1.0, None
+        best_name, best_confidence, snapshot_path, duration_ms = None, -1.0, None, None
         if crops:
-            best_name, best_confidence, _margin, rep_crop = _analyze_crops_for_consensus(crops)
+            best_name, best_confidence, _margin, rep_crop, duration_ms = _analyze_crops_for_consensus(crops)
             if best_name is not None:
                 snapshot_path = _save_event_snapshot(event_id, rep_crop)
             else:
@@ -494,6 +507,7 @@ def on_frigate_event_end(event_id: str | None):
                 frigate_event_id=event_id,
                 snapshot_path=snapshot_path,
                 timestamp=datetime.utcnow(),
+                recognition_duration_ms=duration_ms,
             )
             db.add(event)
             refined = True
@@ -501,6 +515,7 @@ def on_frigate_event_end(event_id: str | None):
             event.person_name = best_name
             event.person_id = _resolve_person_id(best_name, db)
             event.confidence = best_confidence
+            event.recognition_duration_ms = duration_ms
             if snapshot_path:
                 event.snapshot_path = snapshot_path
             refined = True
@@ -508,6 +523,10 @@ def on_frigate_event_end(event_id: str | None):
         if sub_label is not None:
             event.frigate_sub_label = sub_label
             event.frigate_sub_label_score = sub_label_score
+
+        # Frigate's own face recognizer's current average speed, refreshed
+        # here since "end" is when its verdict has actually finalized.
+        event.frigate_recognition_duration_ms = frigate.get_face_recognition_speed_ms()
 
         # At most one MQTT publish per Frigate event: if "new" or "update"
         # already notified, only the DB record (history/accuracy) is
@@ -592,13 +611,32 @@ def _cleanup_old_events():
         db.close()
 
 
+CPU_SAMPLE_RETENTION_DAYS = 7
+
+
+def _cleanup_old_cpu_samples():
+    """Delete CpuSample rows older than CPU_SAMPLE_RETENTION_DAYS, bounding
+    database growth from the per-recognition CPU sampling used by the Stats
+    page chart."""
+    cutoff = datetime.utcnow() - timedelta(days=CPU_SAMPLE_RETENTION_DAYS)
+    db = SessionLocal()
+    try:
+        removed = db.query(CpuSample).filter(CpuSample.timestamp < cutoff).delete()
+        db.commit()
+        if removed:
+            logger.info(f"CPU sample retention sweep: removed {removed} sample(s)")
+    finally:
+        db.close()
+
+
 async def _snapshot_retention_loop():
-    """Background task: periodically sweep old event snapshots and expired
-    RecognitionEvent rows."""
+    """Background task: periodically sweep old event snapshots, expired
+    RecognitionEvent rows, and expired CpuSample rows."""
     while True:
         try:
             await asyncio.get_running_loop().run_in_executor(None, _cleanup_old_snapshots)
             await asyncio.get_running_loop().run_in_executor(None, _cleanup_old_events)
+            await asyncio.get_running_loop().run_in_executor(None, _cleanup_old_cpu_samples)
         except Exception as e:
             logger.error(f"Retention sweep failed: {e}", exc_info=True)
         await asyncio.sleep(3600)

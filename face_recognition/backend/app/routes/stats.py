@@ -1,11 +1,13 @@
 import logging
 from datetime import datetime, timedelta
 
+import psutil
 from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
+from models.cpu_sample import CpuSample
 from models.event import RecognitionEvent
 from models.person import Person
 
@@ -14,6 +16,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/stats", tags=["stats"])
 
 STATS_DAYS = 14
+CPU_SAMPLES_MAX = 200
 
 
 @router.get("")
@@ -58,6 +61,17 @@ def get_stats(db: Session = Depends(get_db)):
     persons_total = db.query(func.count(Person.id)).scalar() or 0
     persons_trained = db.query(func.count(func.distinct(Person.id))).join(Person.embeddings).scalar() or 0
 
+    cpu_rows = (
+        db.query(CpuSample)
+        .order_by(CpuSample.timestamp.desc())
+        .limit(CPU_SAMPLES_MAX)
+        .all()
+    )
+    cpu_usage = [
+        {"timestamp": sample.timestamp.isoformat(), "cpu_percent": sample.cpu_percent}
+        for sample in reversed(cpu_rows)
+    ]
+
     return {
         "total_events": total_events,
         "avg_confidence": float(avg_confidence),
@@ -66,4 +80,6 @@ def get_stats(db: Session = Depends(get_db)):
         "by_person": [{"person_name": name or "unknown", "count": count} for name, count in by_person],
         "by_camera": [{"camera": camera, "count": count} for camera, count in by_camera],
         "by_day": by_day,
+        "cpu_usage": cpu_usage,
+        "cpu_count": psutil.cpu_count() or 1,
     }

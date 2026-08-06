@@ -1,6 +1,45 @@
 import { useQuery } from '@tanstack/react-query'
 import { statsAPI } from '../api'
 
+function CpuChart({ samples, cpuCount }) {
+  if (samples.length === 0) {
+    return <p className="text-gray-400 text-sm">No CPU samples yet — run a recognition first.</p>
+  }
+
+  const max = Math.max(100, ...samples.map((s) => s.cpu_percent))
+  const width = 100
+  const height = 40
+  const points = samples
+    .map((s, i) => {
+      const x = samples.length > 1 ? (i / (samples.length - 1)) * width : 0
+      const y = height - (s.cpu_percent / max) * height
+      return `${x.toFixed(2)},${y.toFixed(2)}`
+    })
+    .join(' ')
+
+  const first = samples[0]
+  const last = samples[samples.length - 1]
+  const latest = last.cpu_percent
+
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-2">
+        <span className="text-sm text-gray-400">
+          Per-core capacity: {cpuCount * 100}% ({cpuCount} cores)
+        </span>
+        <span className="text-2xl font-bold">{latest.toFixed(0)}%</span>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="w-full h-32">
+        <polyline fill="none" stroke="currentColor" strokeWidth="0.6" className="text-accent" points={points} />
+      </svg>
+      <div className="flex justify-between text-[10px] text-gray-500 mt-1">
+        <span>{new Date(first.timestamp).toLocaleString()}</span>
+        <span>{new Date(last.timestamp).toLocaleString()}</span>
+      </div>
+    </div>
+  )
+}
+
 function Bar({ label, count, max }) {
   const pct = max > 0 ? Math.round((count / max) * 100) : 0
   return (
@@ -68,6 +107,11 @@ export default function StatsPage() {
             <Bar key={c.camera} label={c.camera} count={c.count} max={maxCamera} />
           ))}
         </div>
+      </div>
+
+      <div className="card p-6 mb-8">
+        <h3 className="text-lg font-bold mb-4">CPU Usage During Recognition</h3>
+        <CpuChart samples={data.cpu_usage || []} cpuCount={data.cpu_count || 1} />
       </div>
 
       <div className="card p-6">

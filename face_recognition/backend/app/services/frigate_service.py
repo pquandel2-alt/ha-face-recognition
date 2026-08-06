@@ -148,6 +148,30 @@ class FrigateService:
             logger.error(f"Error fetching Frigate face image {name}/{filename}: {e}")
             return None
 
+    def get_stats(self) -> Optional[dict]:
+        """Get Frigate's own /api/stats snapshot (detector/process performance)."""
+        try:
+            url = f"{self.base_url}/api/stats"
+            response = self.session.get(url, timeout=self.timeout)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Error fetching Frigate stats: {e}")
+            return None
+
+    def get_face_recognition_speed_ms(self) -> Optional[float]:
+        """
+        Frigate's own current average face recognition inference speed, for
+        comparison against our own per-event recognition duration. Reported
+        under stats()["embeddings"]["face_recognition_speed"] — only present
+        if Frigate's built-in face recognition feature is enabled.
+        """
+        stats = self.get_stats()
+        if not stats:
+            return None
+        speed = (stats.get("embeddings") or {}).get("face_recognition_speed")
+        return float(speed) if speed is not None else None
+
     def health_check(self) -> bool:
         """Check if Frigate API is reachable."""
         try:

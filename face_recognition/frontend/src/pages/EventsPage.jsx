@@ -115,6 +115,15 @@ export default function EventsPage() {
                     <p className="text-gray-400 text-sm">
                       Camera: <span className="font-mono">{event.camera}</span>
                     </p>
+                    {(event.recognition_duration_ms != null || event.frigate_recognition_duration_ms != null) && (
+                      <p className="text-gray-500 text-xs font-mono">
+                        {event.recognition_duration_ms != null &&
+                          `Erkennung: ${event.recognition_duration_ms.toFixed(0)} ms`}
+                        {event.recognition_duration_ms != null && event.frigate_recognition_duration_ms != null && ' · '}
+                        {event.frigate_recognition_duration_ms != null &&
+                          `Frigate: ${event.frigate_recognition_duration_ms.toFixed(0)} ms`}
+                      </p>
+                    )}
                     {hasFrigateVerdict && (
                       <p className={`text-sm mt-1 flex items-center gap-1 ${disagrees ? 'text-warning' : 'text-gray-400'}`}>
                         {disagrees && <AlertTriangle size={14} />}

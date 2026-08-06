@@ -49,6 +49,7 @@ async def analyze_image(
                 person_name=recognition["name"],
                 confidence=recognition["confidence"],
                 timestamp=timestamp,
+                recognition_duration_ms=result.get("duration_ms"),
             )
             db.add(event)
 
@@ -86,6 +87,8 @@ def get_recent_events(limit: int = 50, db: Session = Depends(get_db)):
             "frigate_sub_label_score": e.frigate_sub_label_score,
             "has_image": e.snapshot_path is not None,
             "verdict": e.verdict,
+            "recognition_duration_ms": e.recognition_duration_ms,
+            "frigate_recognition_duration_ms": e.frigate_recognition_duration_ms,
             "timestamp": e.timestamp.isoformat(),
         }
         for e in events
