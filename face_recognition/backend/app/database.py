@@ -89,9 +89,43 @@ def _migrate_add_missing_columns():
         conn.commit()
 
 
+def _load_settings_overrides():
+    """
+    Ensure the single-row AppSettings override table exists, then apply any
+    non-NULL column onto the shared config.settings singleton — since every
+    module does `from config import settings` and shares that same object,
+    this attribute assignment takes effect everywhere immediately, no
+    further plumbing needed. Imported locally to avoid a database.py <->
+    models.settings import cycle (models.settings imports Base from here).
+    """
+    from config import settings
+    from models.settings import AppSettings
+
+    db = SessionLocal()
+    try:
+        row = db.query(AppSettings).filter_by(id=1).first()
+        if row is None:
+            row = AppSettings(id=1)
+            db.add(row)
+            db.commit()
+            db.refresh(row)
+
+        for column in AppSettings.__table__.columns:
+            if column.name == "id":
+                continue
+            value = getattr(row, column.name)
+            if value is not None:
+                setattr(settings, column.name, value)
+    finally:
+        db.close()
+
+
 def init_db():
     """Create all tables."""
     logger.info("Initializing database...")
+    from models.settings import AppSettings  # noqa: F401 — register table with Base
+
     Base.metadata.create_all(bind=engine)
     _migrate_add_missing_columns()
+    _load_settings_overrides()
     logger.info("Database initialized successfully")

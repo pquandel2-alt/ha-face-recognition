@@ -9,8 +9,8 @@ function Bar({ label, count, max }) {
         <span className="text-gray-300">{label}</span>
         <span className="text-gray-400 font-mono">{count}</span>
       </div>
-      <div className="w-full bg-gray-700 rounded h-2">
-        <div className="bg-blue-500 h-2 rounded" style={{ width: `${pct}%` }} />
+      <div className="w-full bg-surface-hover rounded h-2">
+        <div className="bg-accent h-2 rounded" style={{ width: `${pct}%` }} />
       </div>
     </div>
   )
@@ -34,26 +34,26 @@ export default function StatsPage() {
       <h2 className="text-3xl font-bold mb-6">Statistics</h2>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-gray-800 p-4 rounded-lg text-center">
+        <div className="card p-4 text-center">
           <div className="text-3xl font-bold">{data.total_events}</div>
           <div className="text-gray-400 text-sm">Recognition Events</div>
         </div>
-        <div className="bg-gray-800 p-4 rounded-lg text-center">
+        <div className="card p-4 text-center">
           <div className="text-3xl font-bold">{(data.avg_confidence * 100).toFixed(0)}%</div>
           <div className="text-gray-400 text-sm">Avg. Confidence</div>
         </div>
-        <div className="bg-gray-800 p-4 rounded-lg text-center">
+        <div className="card p-4 text-center">
           <div className="text-3xl font-bold">{data.persons_trained}</div>
           <div className="text-gray-400 text-sm">Trained Persons</div>
         </div>
-        <div className="bg-gray-800 p-4 rounded-lg text-center">
+        <div className="card p-4 text-center">
           <div className="text-3xl font-bold">{data.persons_total}</div>
           <div className="text-gray-400 text-sm">Total Persons</div>
         </div>
       </div>
 
       <div className="grid md:grid-cols-2 gap-6 mb-8">
-        <div className="bg-gray-800 p-6 rounded-lg">
+        <div className="card p-6">
           <h3 className="text-lg font-bold mb-4">By Person</h3>
           {data.by_person.length === 0 && <p className="text-gray-400 text-sm">No events yet.</p>}
           {data.by_person.map((p) => (
@@ -61,7 +61,7 @@ export default function StatsPage() {
           ))}
         </div>
 
-        <div className="bg-gray-800 p-6 rounded-lg">
+        <div className="card p-6">
           <h3 className="text-lg font-bold mb-4">By Camera</h3>
           {data.by_camera.length === 0 && <p className="text-gray-400 text-sm">No events yet.</p>}
           {data.by_camera.map((c) => (
@@ -70,13 +70,13 @@ export default function StatsPage() {
         </div>
       </div>
 
-      <div className="bg-gray-800 p-6 rounded-lg">
+      <div className="card p-6">
         <h3 className="text-lg font-bold mb-4">Last 14 Days</h3>
         <div className="flex items-end gap-2 h-32">
           {data.by_day.map((d) => (
             <div key={d.date} className="flex-1 flex flex-col items-center gap-1">
               <div
-                className="w-full bg-blue-500 rounded-t"
+                className="w-full bg-accent rounded-t"
                 style={{
                   height: maxDay > 0 ? `${Math.max(2, (d.count / maxDay) * 100)}%` : '2%',
                 }}

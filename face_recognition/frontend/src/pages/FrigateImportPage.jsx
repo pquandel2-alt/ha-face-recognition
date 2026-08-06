@@ -96,7 +96,7 @@ function TrainedFacesTab() {
         const target = targets[name] ?? matchingPersonId(name)
 
         return (
-          <div key={name} className="bg-gray-800 rounded-lg p-6">
+          <div key={name} className="card p-6">
             <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
               <h3 className="text-xl font-bold">
                 {name} <span className="text-gray-400 font-normal">({filenames.length} Bilder)</span>
@@ -111,7 +111,7 @@ function TrainedFacesTab() {
                       [name]: e.target.value === 'new' ? 'new' : Number(e.target.value),
                     }))
                   }
-                  className="bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm"
+                  className="bg-surface-hover border border-border rounded px-3 py-2 text-sm"
                 >
                   <option value="new">Neue Person "{name}" anlegen</option>
                   {persons.map((p) => (
@@ -123,7 +123,7 @@ function TrainedFacesTab() {
 
                 <button
                   onClick={() => toggleAll(name, filenames)}
-                  className="text-sm text-blue-400 hover:text-blue-300"
+                  className="text-sm text-accent hover:text-accent-hover"
                 >
                   {filenames.every((f) => selected.has(f)) ? 'Alle abwählen' : 'Alle auswählen'}
                 </button>
@@ -131,7 +131,7 @@ function TrainedFacesTab() {
                 <button
                   onClick={() => handleImport(name)}
                   disabled={selected.size === 0 || importMutation.isPending}
-                  className="bg-green-600 hover:bg-green-700 disabled:opacity-50 px-4 py-2 rounded font-medium text-sm"
+                  className="btn-success"
                 >
                   {importMutation.isPending
                     ? 'Importiere...'
@@ -145,7 +145,7 @@ function TrainedFacesTab() {
                 <label
                   key={filename}
                   className={`relative rounded-lg overflow-hidden cursor-pointer transition ${
-                    selected.has(filename) ? 'ring-2 ring-blue-500' : 'ring-1 ring-gray-600'
+                    selected.has(filename) ? 'ring-2 ring-accent' : 'ring-1 ring-border'
                   }`}
                 >
                   <AuthImage
@@ -232,7 +232,7 @@ function EventSnapshotsTab() {
     <label
       key={event.id}
       className={`relative rounded-lg overflow-hidden cursor-pointer transition ${
-        selectedEventIds.includes(event.id) ? 'ring-2 ring-blue-500' : 'ring-1 ring-gray-600'
+        selectedEventIds.includes(event.id) ? 'ring-2 ring-accent' : 'ring-1 ring-border'
       }`}
     >
       <AuthImage url={`/frigate/thumbnail/${event.id}`} className="w-full h-40 object-cover" />
@@ -256,7 +256,7 @@ function EventSnapshotsTab() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
       <div className="lg:col-span-1">
-        <div className="bg-gray-800 p-6 rounded-lg sticky top-8">
+        <div className="bg-surface-raised p-6 rounded-lg sticky top-8">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold">Zielperson</h3>
             <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
@@ -275,8 +275,8 @@ function EventSnapshotsTab() {
                 onClick={() => setSelectedPersonId(person.id)}
                 className={`w-full text-left px-4 py-2 rounded transition ${
                   selectedPersonId === person.id
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                    ? 'bg-accent text-white'
+                    : 'bg-surface-hover text-gray-200 hover:bg-border'
                 }`}
               >
                 {person.name}
@@ -288,7 +288,7 @@ function EventSnapshotsTab() {
             <button
               onClick={handleImport}
               disabled={!selectedPersonId || importMutation.isPending}
-              className="w-full mt-4 bg-green-600 hover:bg-green-700 disabled:opacity-50 px-4 py-2 rounded font-medium"
+              className="w-full mt-4 btn-success"
             >
               {importMutation.isPending
                 ? `Importiere ${selectedEventIds.length}...`
@@ -333,7 +333,7 @@ function EventSnapshotsTab() {
                   </h4>
                   <button
                     onClick={() => handleToggleCluster(cluster.events)}
-                    className="text-sm text-blue-400 hover:text-blue-300"
+                    className="text-sm text-accent hover:text-accent-hover"
                   >
                     {cluster.events.every((e) => selectedEventIds.includes(e.id))
                       ? 'Gruppe abwählen'
@@ -378,13 +378,13 @@ export default function FrigateImportPage() {
 
   if (!frigateHealth.healthy) {
     return (
-      <div className="bg-red-900 border border-red-600 p-4 rounded-lg">
-        <h2 className="text-xl font-bold text-red-200 mb-2">Frigate nicht erreichbar</h2>
-        <p className="text-red-100">
+      <div className="bg-danger-bg border border-danger-border p-4 rounded-lg">
+        <h2 className="text-xl font-bold text-danger mb-2">Frigate nicht erreichbar</h2>
+        <p className="text-danger">
           Verbindung zur Frigate-API unter{' '}
           <span className="font-mono">{frigateHealth.url}</span> fehlgeschlagen.
         </p>
-        <p className="text-red-100 text-sm mt-2">
+        <p className="text-danger text-sm mt-2">
           Prüfe, ob Frigate läuft und die URL in den Add-on-Optionen korrekt ist.
         </p>
       </div>
@@ -395,12 +395,12 @@ export default function FrigateImportPage() {
     <div>
       <h2 className="text-3xl font-bold mb-6">Frigate Import</h2>
 
-      <div className="flex gap-4 mb-8 border-b border-gray-700">
+      <div className="flex gap-4 mb-8 border-b border-border">
         <button
           onClick={() => setTab('faces')}
           className={`pb-3 px-1 font-medium ${
             tab === 'faces'
-              ? 'text-blue-400 border-b-2 border-blue-400'
+              ? 'text-accent border-b-2 border-accent'
               : 'text-gray-400 hover:text-gray-200'
           }`}
         >
@@ -410,7 +410,7 @@ export default function FrigateImportPage() {
           onClick={() => setTab('events')}
           className={`pb-3 px-1 font-medium ${
             tab === 'events'
-              ? 'text-blue-400 border-b-2 border-blue-400'
+              ? 'text-accent border-b-2 border-accent'
               : 'text-gray-400 hover:text-gray-200'
           }`}
         >

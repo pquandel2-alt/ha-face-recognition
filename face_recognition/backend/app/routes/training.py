@@ -1,4 +1,5 @@
 import logging
+import threading
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,13 +17,31 @@ router = APIRouter(prefix="/training", tags=["training"])
 
 # Global face engine instance
 face_engine: FaceEngine | None = None
+# Guards construction/reset of the singleton above — needed since
+# recognition.py's ThreadPoolExecutor workers call get_face_engine()
+# concurrently from multiple threads, and the Settings page can trigger a
+# reset (see reset_face_engine) from yet another request thread at any time.
+_face_engine_lock = threading.Lock()
 
 
 def get_face_engine() -> FaceEngine:
     global face_engine
     if face_engine is None:
-        face_engine = FaceEngine()
+        with _face_engine_lock:
+            if face_engine is None:
+                face_engine = FaceEngine()
     return face_engine
+
+
+def reset_face_engine() -> None:
+    """
+    Force the next get_face_engine() call to rebuild the singleton — used
+    by the Settings page after changing insightface_model, so the new model
+    loads on next use without a process restart.
+    """
+    global face_engine
+    with _face_engine_lock:
+        face_engine = None
 
 
 def _embedding_summary(person_id: int, db: Session) -> dict:

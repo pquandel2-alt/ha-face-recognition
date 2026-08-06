@@ -2,7 +2,7 @@ import asyncio
 import logging
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Depends, HTTPException, WebSocket
@@ -14,7 +14,7 @@ from config import settings
 from database import init_db, get_db, SessionLocal
 from models.event import RecognitionEvent
 from models.person import Person
-from routes import persons, training, recognition, frigate, stats
+from routes import persons, training, recognition, frigate, stats, settings as settings_routes
 from services.mqtt_service import MQTTService
 from services.frigate_service import FrigateService
 from services.ha_discovery import get_discovery_configs
@@ -44,6 +44,7 @@ app.include_router(training.router, prefix="/api")
 app.include_router(recognition.router, prefix="/api")
 app.include_router(frigate.router, prefix="/api")
 app.include_router(stats.router, prefix="/api")
+app.include_router(settings_routes.router, prefix="/api")
 
 
 # Global MQTT service
@@ -180,6 +181,40 @@ def publish_ha_discovery_configs():
     logger.info("Published Home Assistant MQTT Discovery configs")
 
 
+def _init_mqtt_service() -> MQTTService:
+    """Build and connect a fresh MQTTService with the standard callbacks
+    registered — shared by startup() and reinitialize_mqtt() (Settings page
+    broker changes) so both stay in sync."""
+    service = MQTTService()
+    service.set_frigate_callback(on_frigate_event)
+    # Publishes HA Discovery configs on every successful (re-)connect, not
+    # just the first — connect() is async/non-blocking with automatic
+    # reconnect, so we can't assume the connection is up right away.
+    service.set_on_connect_callback(publish_ha_discovery_configs)
+    try:
+        service.connect()
+    except Exception as e:
+        logger.error(f"Failed to initialize MQTT: {e}")
+    return service
+
+
+def reinitialize_mqtt():
+    """
+    Rebuild the MQTT connection after the Settings page changes broker
+    host/port/credentials — cleanly disconnects the old client (so the
+    Last-Will "offline" doesn't fire) and reconnects with the new settings,
+    without needing a process restart.
+    """
+    global mqtt_service
+    if mqtt_service:
+        try:
+            mqtt_service.disconnect()
+        except Exception as e:
+            logger.warning(f"Error disconnecting previous MQTT client: {e}")
+    mqtt_service = _init_mqtt_service()
+    logger.info("MQTT service reinitialized with updated settings")
+
+
 @app.on_event("startup")
 async def startup():
     """Initialize database, start MQTT service, and setup HA Discovery."""
@@ -191,19 +226,7 @@ async def startup():
     # Initialize database
     init_db()
 
-    # Initialize MQTT service
-    mqtt_service = MQTTService()
-    mqtt_service.set_frigate_callback(on_frigate_event)
-    # Publishes HA Discovery configs on every successful (re-)connect, not
-    # just the first — connect() is now async/non-blocking with automatic
-    # reconnect, so we can no longer assume the connection is up by the time
-    # startup() returns.
-    mqtt_service.set_on_connect_callback(publish_ha_discovery_configs)
-
-    try:
-        mqtt_service.connect()
-    except Exception as e:
-        logger.error(f"Failed to initialize MQTT: {e}")
+    mqtt_service = _init_mqtt_service()
 
     asyncio.create_task(_snapshot_retention_loop())
 
@@ -545,13 +568,39 @@ def _cleanup_old_snapshots():
         logger.info(f"Snapshot retention sweep: removed {removed} snapshot(s)")
 
 
+def _cleanup_old_events():
+    """Delete RecognitionEvent rows older than event_retention_days, bounding
+    database growth — confirmed events already have their training data
+    copied into a separate TrainingImage row (see confirm_event), so
+    deleting the event row itself loses nothing needed for training."""
+    cutoff = datetime.utcnow() - timedelta(days=settings.event_retention_days)
+    db = SessionLocal()
+    try:
+        old_events = db.query(RecognitionEvent).filter(RecognitionEvent.timestamp < cutoff).all()
+        if not old_events:
+            return
+        for event in old_events:
+            if event.snapshot_path:
+                try:
+                    (SNAPSHOT_DIR / event.snapshot_path).unlink(missing_ok=True)
+                except OSError as e:
+                    logger.warning(f"Could not remove snapshot for expired event {event.id}: {e}")
+            db.delete(event)
+        db.commit()
+        logger.info(f"Event retention sweep: removed {len(old_events)} event(s)")
+    finally:
+        db.close()
+
+
 async def _snapshot_retention_loop():
-    """Background task: periodically sweep old event snapshots off disk."""
+    """Background task: periodically sweep old event snapshots and expired
+    RecognitionEvent rows."""
     while True:
         try:
             await asyncio.get_running_loop().run_in_executor(None, _cleanup_old_snapshots)
+            await asyncio.get_running_loop().run_in_executor(None, _cleanup_old_events)
         except Exception as e:
-            logger.error(f"Snapshot retention sweep failed: {e}", exc_info=True)
+            logger.error(f"Retention sweep failed: {e}", exc_info=True)
         await asyncio.sleep(3600)
 
 

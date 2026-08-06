@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Check, CircleSlash } from 'lucide-react'
 import { trainingAPI, personsAPI } from '../api'
 
 export default function TrainingPage() {
@@ -37,51 +38,51 @@ export default function TrainingPage() {
         <button
           onClick={() => trainBatchMutation.mutate()}
           disabled={trainableCount === 0 || trainBatchMutation.isPending}
-          className="bg-green-600 hover:bg-green-700 px-6 py-2 rounded font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          className="btn-success"
         >
           {trainBatchMutation.isPending ? 'Training all...' : `Train All (${trainableCount})`}
         </button>
       </div>
 
-      <div className="bg-blue-900 bg-opacity-20 border border-blue-600 p-4 rounded mb-8">
-        <p className="text-sm text-blue-200">
+      <div className="bg-info-bg border border-info-border rounded-lg p-4 mb-8">
+        <p className="text-sm text-info">
           Click "Train" to compute face embeddings from training images.
           You need at least one image per person.
         </p>
       </div>
 
       {trainBatchMutation.data && (
-        <div className="bg-gray-800 border border-green-600 p-4 rounded mb-8 text-sm">
+        <div className="card border-success/40 p-4 mb-8 text-sm">
           Trained {trainBatchMutation.data.data.trained} of{' '}
           {trainBatchMutation.data.data.trained + trainBatchMutation.data.data.failed} persons.
         </div>
       )}
 
       {trainBatchMutation.error && (
-        <div className="text-red-400 text-sm mb-8">
+        <div className="text-danger text-sm mb-8">
           {trainBatchMutation.error.response?.data?.detail || 'Batch training failed'}
         </div>
       )}
 
       <div className="space-y-4">
         {status.map((person) => (
-          <div key={person.id} className="bg-gray-800 p-6 rounded-lg">
+          <div key={person.id} className="card p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-xl font-bold">{person.name}</h3>
-                <p className="text-gray-400">
-                  {person.image_count} image{person.image_count !== 1 ? 's' : ''} •{' '}
+                <p className="text-gray-400 flex items-center gap-2 mt-1">
+                  {person.image_count} image{person.image_count !== 1 ? 's' : ''}
                   {person.has_embedding ? (
-                    <span className="text-green-400">✓ Trained</span>
+                    <span className="chip-success"><Check size={12} /> Trained</span>
                   ) : (
-                    <span className="text-yellow-400">⊘ Not trained</span>
+                    <span className="chip-warning"><CircleSlash size={12} /> Not trained</span>
                   )}
                 </p>
               </div>
               <button
                 onClick={() => trainMutation.mutate(person.id)}
                 disabled={person.image_count === 0 || trainMutation.isPending}
-                className="bg-green-600 hover:bg-green-700 px-6 py-2 rounded font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                className="btn-success"
               >
                 {trainMutation.isPending ? 'Training...' : 'Train'}
               </button>
@@ -101,7 +102,7 @@ export default function TrainingPage() {
             )}
 
             {trainMutation.error && (
-              <div className="text-red-400 text-sm mt-2">
+              <div className="text-danger text-sm mt-2">
                 {trainMutation.error.response?.data?.detail || 'Training failed'}
               </div>
             )}

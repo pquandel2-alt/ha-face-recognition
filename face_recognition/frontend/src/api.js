@@ -68,6 +68,12 @@ export const statsAPI = {
   get: () => api.get('/stats'),
 }
 
+// Settings API
+export const settingsAPI = {
+  get: () => api.get('/settings'),
+  update: (changes) => api.put('/settings', changes),
+}
+
 // Health
 export const healthAPI = {
   check: () => api.get('/health'),

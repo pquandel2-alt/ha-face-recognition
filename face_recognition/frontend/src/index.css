@@ -20,3 +20,41 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+@layer components {
+  .card {
+    @apply bg-surface-raised rounded-lg border border-border;
+  }
+
+  .btn {
+    @apply px-4 py-2 rounded font-medium text-sm transition disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-accent hover:bg-accent-hover text-white;
+  }
+  .btn-secondary {
+    @apply btn bg-surface-hover hover:bg-border text-gray-100;
+  }
+  .btn-success {
+    @apply btn bg-success/20 hover:bg-success/30 text-success border border-success/40;
+  }
+  .btn-danger {
+    @apply btn bg-danger/20 hover:bg-danger/30 text-danger border border-danger/40;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border;
+  }
+  .chip-success {
+    @apply chip bg-success-bg text-success border-success-border;
+  }
+  .chip-warning {
+    @apply chip bg-warning-bg text-warning border-warning-border;
+  }
+  .chip-danger {
+    @apply chip bg-danger-bg text-danger border-danger-border;
+  }
+  .chip-info {
+    @apply chip bg-info-bg text-info border-info-border;
+  }
+}

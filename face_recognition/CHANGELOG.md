@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.20
+
+- Feature (automatische Event-Löschung): Erkennungs-Ereignisse werden jetzt standardmäßig nach
+  7 Tagen automatisch aus der Datenbank gelöscht (einstellbar), damit sie nicht unbegrenzt
+  anwächst. Bereits bestätigte Events sind davon nicht betroffen — ihr Trainingsbild wurde beim
+  Bestätigen bereits unabhängig gespeichert.
+- Feature (neue Einstellungsseite): Alle bisher nur über die Home-Assistant-Add-on-Optionen
+  änderbaren Werte (Erkennungs-Schwellenwerte, Bildqualität, Ausreißer-Erkennung, Konsens,
+  Aufbewahrungsfristen, Frigate-Verbindung, Erkennungsmodell, MQTT-Zugangsdaten) lassen sich jetzt
+  direkt in der App unter "Settings" anpassen — inklusive sichtbarer Wertebereiche. Änderungen
+  wirken sofort, ohne Neustart des Add-ons: ein Modellwechsel lädt das Erkennungsmodell im
+  Hintergrund neu, geänderte MQTT-Zugangsdaten bauen die Verbindung sauber neu auf.
+- Redesign (aufgeräumteres dunkles Design): Text-Emoji (✓ ✗ ⚠ ▶ ▼) wurden durch echte Icons
+  ersetzt, grelle Vollfarben-Badges durch dezente, gedeckte Chips mit Rahmen — gleiches Layout,
+  ruhigere Optik.
+
 ## 1.0.19
 
 - Fix (MQTT-Verbindungsaufbau robuster): Ist der Broker beim Start noch nicht erreichbar (z. B.

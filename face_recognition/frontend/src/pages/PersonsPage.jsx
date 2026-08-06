@@ -43,25 +43,25 @@ export default function PersonsPage() {
       <h2 className="text-3xl font-bold mb-6">Manage Persons</h2>
 
       {/* Add Person Form */}
-      <div className="bg-gray-800 p-6 rounded-lg mb-8">
+      <div className="card p-6 mb-8">
         <form onSubmit={handleCreate} className="flex gap-2">
           <input
             type="text"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder="Person name..."
-            className="flex-1 bg-gray-700 text-white px-4 py-2 rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+            className="flex-1 bg-surface-hover text-white px-4 py-2 rounded border border-border focus:border-accent focus:outline-none"
           />
           <button
             type="submit"
             disabled={createMutation.isPending}
-            className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-medium disabled:opacity-50"
+            className="btn-primary"
           >
             {createMutation.isPending ? 'Creating...' : 'Add Person'}
           </button>
         </form>
         {createMutation.error && (
-          <div className="text-red-400 mt-2">{createMutation.error.response?.data?.detail || 'Error creating person'}</div>
+          <div className="text-danger mt-2">{createMutation.error.response?.data?.detail || 'Error creating person'}</div>
         )}
       </div>
 

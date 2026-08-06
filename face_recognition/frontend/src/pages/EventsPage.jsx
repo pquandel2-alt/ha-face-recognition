@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
+import { Check, X, AlertTriangle } from 'lucide-react'
 import { recognitionAPI, personsAPI } from '../api'
 import AuthImage from '../components/AuthImage'
 
@@ -87,9 +88,7 @@ export default function EventsPage() {
           return (
             <div
               key={event.id}
-              className={`bg-gray-800 p-4 rounded-lg ${
-                disagrees ? 'ring-2 ring-orange-500' : ''
-              }`}
+              className={`card p-4 ${disagrees ? 'ring-1 ring-warning-border' : ''}`}
             >
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-4 flex-1 min-w-0">
@@ -104,10 +103,10 @@ export default function EventsPage() {
                       <span
                         className={
                           event.person_name === 'unknown'
-                            ? 'text-red-400'
+                            ? 'text-danger'
                             : event.person_name === 'uncertain'
-                            ? 'text-yellow-400'
-                            : 'text-green-400'
+                            ? 'text-warning'
+                            : 'text-success'
                         }
                       >
                         {event.person_name}
@@ -117,7 +116,8 @@ export default function EventsPage() {
                       Camera: <span className="font-mono">{event.camera}</span>
                     </p>
                     {hasFrigateVerdict && (
-                      <p className={`text-sm mt-1 ${disagrees ? 'text-orange-400' : 'text-gray-400'}`}>
+                      <p className={`text-sm mt-1 flex items-center gap-1 ${disagrees ? 'text-warning' : 'text-gray-400'}`}>
+                        {disagrees && <AlertTriangle size={14} />}
                         Frigate sagt: <span className="font-semibold">{event.frigate_sub_label}</span>
                         {event.frigate_sub_label_score != null &&
                           ` (${(event.frigate_sub_label_score * 100).toFixed(1)}%)`}
@@ -128,7 +128,7 @@ export default function EventsPage() {
                 </div>
 
                 <div className="text-right flex-shrink-0">
-                  <div className="text-2xl font-bold text-blue-400">
+                  <div className="text-2xl font-bold text-accent">
                     {(event.confidence * 100).toFixed(1)}%
                   </div>
                   <p className="text-gray-400 text-sm">
@@ -138,17 +138,21 @@ export default function EventsPage() {
               </div>
 
               {event.has_image && (
-                <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-700">
+                <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border">
                   {event.verdict === 'confirmed' && (
-                    <span className="text-sm text-green-400">✓ Bestätigt — als Trainingsbild übernommen</span>
+                    <span className="chip-success">
+                      <Check size={14} /> Bestätigt — als Trainingsbild übernommen
+                    </span>
                   )}
                   {event.verdict === 'rejected' && (
-                    <span className="text-sm text-red-400">✗ Abgelehnt — falsche Erkennung</span>
+                    <span className="chip-danger">
+                      <X size={14} /> Abgelehnt — falsche Erkennung
+                    </span>
                   )}
                   {!event.verdict && (
                     <>
                       <select
-                        className="bg-gray-700 text-sm rounded px-2 py-1"
+                        className="bg-surface-hover border border-border text-sm rounded px-2 py-1"
                         value={selectedPersonId(event)}
                         onChange={(e) =>
                           setSelections((prev) => ({ ...prev, [event.id]: e.target.value }))
@@ -162,7 +166,7 @@ export default function EventsPage() {
                         ))}
                       </select>
                       <button
-                        className="text-sm bg-green-700 hover:bg-green-600 px-3 py-1 rounded disabled:opacity-50"
+                        className="btn-success py-1"
                         disabled={!selectedPersonId(event) || confirmMutation.isPending}
                         onClick={() =>
                           confirmMutation.mutate({
@@ -174,7 +178,7 @@ export default function EventsPage() {
                         Trainieren
                       </button>
                       <button
-                        className="text-sm bg-red-700 hover:bg-red-600 px-3 py-1 rounded disabled:opacity-50"
+                        className="btn-danger py-1"
                         disabled={rejectMutation.isPending}
                         onClick={() => rejectMutation.mutate(event.id)}
                       >
